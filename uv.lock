@@ -2,9 +2,12 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
-    "python_full_version >= '3.14' and platform_python_implementation != 'PyPy'",
-    "python_full_version < '3.14' and platform_python_implementation != 'PyPy'",
-    "platform_python_implementation == 'PyPy'",
+    "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and platform_python_implementation != 'PyPy' and sys_platform != 'win32'",
+    "platform_python_implementation == 'PyPy' and sys_platform != 'win32'",
+    "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'win32'",
+    "platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
 ]
 
 [[package]]
@@ -124,7 +127,7 @@ name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
 wheels = [
@@ -220,14 +223,14 @@ wheels = [
 
 [[package]]
 name = "click"
-version = "8.2.1"
+version = "8.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/60/6c/8ca2efa64cf75a977a0d7fac081354553ebe483345c734fb6b6515d96bbc/click-8.2.1.tar.gz", hash = "sha256:27c491cc05d968d271d5a1db13e3b5a184636d9d930f148c50b038f0d0646202", size = 286342, upload-time = "2025-05-20T23:19:49.832Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/61/de6cd827efad202d7057d93e0fed9294b96952e188f7384832791c7b2254/click-8.3.0.tar.gz", hash = "sha256:e7b8232224eba16f4ebe410c25ced9f7875cb5f3263ffc93cc3e8da705e229c4", size = 276943, upload-time = "2025-09-18T17:32:23.696Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/32/10bb5764d90a8eee674e9dc6f4db6a0ab47c8c4d0d83c27f7c39ac415a4d/click-8.2.1-py3-none-any.whl", hash = "sha256:61a3265b914e850b85317d0b3109c7f8cd35a670f963866005d6ef1d5175a12b", size = 102215, upload-time = "2025-05-20T23:19:47.796Z" },
+    { url = "https://files.pythonhosted.org/packages/db/d3/9dcc0f5797f070ec8edf30fbadfb200e71d9db6b84d211e3b2085a7589a0/click-8.3.0-py3-none-any.whl", hash = "sha256:9b9f285302c6e3064f4330c05f05b81945b2a39544279343e6e7c5f27a9baddc", size = 107295, upload-time = "2025-09-18T17:32:22.42Z" },
 ]
 
 [[package]]
@@ -420,7 +423,8 @@ source = { virtual = "." }
 dependencies = [
     { name = "iscc-sum" },
     { name = "omero-py" },
-    { name = "zeroc-ice" },
+    { name = "zeroc-ice", version = "3.6.5", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "zeroc-ice", version = "3.6.5", source = { url = "https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl" }, marker = "sys_platform == 'win32'" },
 ]
 
 [package.dev-dependencies]
@@ -434,7 +438,8 @@ dev = [
 requires-dist = [
     { name = "iscc-sum", specifier = ">=0.1.0" },
     { name = "omero-py", specifier = ">=5.21.1" },
-    { name = "zeroc-ice", url = "https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl" },
+    { name = "zeroc-ice", marker = "sys_platform != 'win32'", specifier = ">=3.6.5" },
+    { name = "zeroc-ice", marker = "sys_platform == 'win32'", url = "https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl" },
 ]
 
 [package.metadata.requires-dev]
@@ -457,7 +462,8 @@ dependencies = [
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "pyyaml" },
     { name = "requests" },
-    { name = "zeroc-ice" },
+    { name = "zeroc-ice", version = "3.6.5", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "zeroc-ice", version = "3.6.5", source = { url = "https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl" }, marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f0/0e/0f3f54973f5e85d8ccad00e116087fd39d644c3ba955867acd2be90f218b/omero_py-5.21.1.tar.gz", hash = "sha256:894988c7a83b2c9eaf77d75411b0c20722d177e6a6b5eb447a2bb8953ac03e29", size = 2341588, upload-time = "2025-09-11T12:56:51.67Z" }
 wheels = [
@@ -731,7 +737,23 @@ wheels = [
 [[package]]
 name = "zeroc-ice"
 version = "3.6.5"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and platform_python_implementation != 'PyPy' and sys_platform != 'win32'",
+    "platform_python_implementation == 'PyPy' and sys_platform != 'win32'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1e/65/43c3ad2412467c731ee3c23bce03fad7e2b79df31301e27cc7b1b454554b/zeroc-ice-3.6.5.tar.gz", hash = "sha256:4235ffeb605bcd4e22e716577f7d61e4aa1bc82f65276bb542701a81b7933356", size = 1150200, upload-time = "2019-08-13T15:44:55.162Z" }
+
+[[package]]
+name = "zeroc-ice"
+version = "3.6.5"
 source = { url = "https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'win32'",
+    "platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
+]
 wheels = [
     { url = "https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl", hash = "sha256:1bbf07595bc2898f381d50b162fcc42896021f35f4f2263c4a8748cae7ff5322" },
 ]
