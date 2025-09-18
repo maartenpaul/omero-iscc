@@ -1,0 +1,11 @@
+[project]
+name = "omero-iscc"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "zeroc-ice @ https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl",
+    "iscc-sum>=0.1.0",
+    "omero-py>=5.21.1",
+]

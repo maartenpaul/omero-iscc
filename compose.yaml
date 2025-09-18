@@ -1,0 +1,45 @@
+services:
+  omero-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: omero
+      POSTGRES_USER: omero
+      POSTGRES_PASSWORD: omero
+    networks:
+      - omero-net
+    volumes:
+      - omero-db-data:/var/lib/postgresql/data
+
+  omero-server:
+    image: openmicroscopy/omero-server:latest
+    depends_on:
+      - omero-db
+    environment:
+      CONFIG_omero_db_user: omero
+      CONFIG_omero_db_pass: omero
+      CONFIG_omero_db_name: omero
+      CONFIG_omero_db_host: omero-db
+      ROOTPASS: omero
+    networks:
+      - omero-net
+    volumes:
+      - ./omero-data:/OMERO
+    ports:
+      - "4064:4064"   # <-- Expose OMERO Insight / API port
+
+  omero-web:
+    image: openmicroscopy/omero-web-standalone:latest
+    depends_on:
+      - omero-server
+    environment:
+      OMEROHOST: omero-server
+    ports:
+      - "4080:4080"
+    networks:
+      - omero-net
+
+networks:
+  omero-net:
+
+volumes:
+  omero-db-data:
