@@ -210,6 +210,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Docker host mapping
+omero-data
+
 # AI
 .claude
 .mcp.json
