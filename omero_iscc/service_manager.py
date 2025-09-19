@@ -194,19 +194,6 @@ class IsccServiceManager:
         except Exception as e:
             logger.warning(f"Failed to send webhook notification: {e}")
 
-    def run_once(self) -> int:
-        """Run a single poll cycle.
-
-        Returns:
-            Number of images processed
-        """
-        if not self.monitor:
-            raise RuntimeError("Monitor not initialized")
-
-        logger.debug("Running single poll cycle")
-        count = self.monitor.poll_once()
-        logger.debug(f"Processed {count} images")
-        return count
 
     def run(self):
         """Run the service continuously."""
@@ -319,16 +306,8 @@ def main():
     # Create and run service
     service = IsccServiceManager(config)
 
-    if args.once:
-        # Run single cycle for testing
-        if service.connect():
-            service.initialize_components()
-            count = service.run_once()
-            print(f"Processed {count} images")
-            service.stop()
-    else:
-        # Run continuously
-        service.run()
+    # Always run continuously (remove --once option functionality for now)
+    service.run()
 
 
 if __name__ == "__main__":

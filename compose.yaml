@@ -20,6 +20,13 @@ services:
       CONFIG_omero_db_name: omero
       CONFIG_omero_db_host: omero-db
       ROOTPASS: omero
+#      # Public user configuration
+#      CONFIG_omero_web_public_enabled: "true"
+#      CONFIG_omero_web_public_user: "public"
+#      CONFIG_omero_web_public_password: "public"
+#      CONFIG_omero_web_public_server__id: "1"
+#      # Download policy - open for public access
+#      CONFIG_omero_policy_binary__access: "+read,+write,+image,+plate,+screen"
     networks:
       - omero-net
     volumes:
@@ -33,6 +40,16 @@ services:
       - omero-server
     environment:
       OMEROHOST: omero-server
+#      # Public browsing configuration
+#      CONFIG_omero_web_public_enabled: "true"
+#      CONFIG_omero_web_public_user: "public"
+#      CONFIG_omero_web_public_password: "public"
+#      CONFIG_omero_web_public_server__id: "1"
+#      CONFIG_omero_web_public_url__filter: "^/(webgateway|webclient|webadmin/public|api)/"
+#      # Read-only mode for public users
+#      CONFIG_omero_web_public_cache__enabled: "true"
+#      CONFIG_omero_web_login__redirect: "/webclient/"
+#      CONFIG_omero_web_show__forgot__password: "false"
     ports:
       - "4080:4080"
     networks:
@@ -52,7 +69,7 @@ services:
       OMERO_ISCC_POLL_INTERVAL: 5
       OMERO_ISCC_BATCH_SIZE: 100
       OMERO_ISCC_NAMESPACE: org.iscc.omero.sum
-      OMERO_ISCC_LOG_LEVEL: info
+      OMERO_ISCC_LOG_LEVEL: debug
     restart: unless-stopped
     networks:
       - omero-net

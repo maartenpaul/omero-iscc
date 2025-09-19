@@ -19,13 +19,13 @@ class ServiceConfig:
     secure: bool = True
 
     # Service settings
-    poll_interval: int = 60  # seconds between polls
+    poll_interval: int = 5  # seconds between polls
     batch_size: int = 100  # max images per poll
     chunk_size: int = 1024 * 1024  # 1MB file chunks
     namespace: str = "org.iscc.omero.sum"
 
     # Logging
-    log_level: str = "info"
+    log_level: str = "debug"
     log_file: Optional[str] = None
 
     # Optional webhook for notifications

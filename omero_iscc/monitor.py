@@ -2,9 +2,8 @@
 
 import time
 import logging
-from datetime import datetime, timedelta
-from typing import Optional, Set, Generator
-from omero.gateway import BlitzGateway, ImageWrapper
+from typing import Set
+from omero.gateway import BlitzGateway
 
 logger = logging.getLogger(__name__)
 
@@ -31,46 +30,11 @@ class OmeroImageMonitor:
         self.poll_interval = poll_interval
         self.batch_size = batch_size
         self.namespace = namespace
-        self.last_check_time: Optional[datetime] = None
         self.processed_ids: Set[int] = set()
         self._running = False
 
-    def get_new_images(
-        self, since: Optional[datetime] = None
-    ) -> Generator[ImageWrapper, None, None]:
-        """Get images imported since the specified time.
 
-        Args:
-            since: Get images imported after this time (None for most recent)
-
-        Yields:
-            ImageWrapper objects for new images
-        """
-        try:
-            # Use timelineListImages to get recent images
-            if since:
-                # Convert to milliseconds timestamp for OMERO
-                tfrom = int(since.timestamp() * 1000)
-                tto = int(datetime.now().timestamp() * 1000)
-                images = self.conn.timelineListImages(tfrom=tfrom, tto=tto)
-            else:
-                # Get most recent batch
-                images = self.conn.timelineListImages()
-
-            count = 0
-            for image in images:
-                if count >= self.batch_size:
-                    break
-
-                # Check if already has ISCC annotation
-                if not self._has_iscc_annotation(image):
-                    yield image
-                    count += 1
-
-        except Exception as e:
-            logger.error(f"Error getting new images: {e}")
-
-    def _has_iscc_annotation(self, image: ImageWrapper) -> bool:
+    def _has_iscc_annotation(self, image) -> bool:
         """Check if image already has ISCC annotation.
 
         Args:
@@ -92,42 +56,6 @@ class OmeroImageMonitor:
             logger.warning(f"Error checking annotations for image {image.getId()}: {e}")
         return False
 
-    def poll_once(self) -> int:
-        """Poll for new images once.
-
-        Returns:
-            Number of new images found
-        """
-        new_count = 0
-        try:
-            # Get images since last check
-            since = self.last_check_time if self.last_check_time else None
-
-            for image in self.get_new_images(since):
-                image_id = image.getId()
-
-                # Skip if already processed in this session
-                if image_id in self.processed_ids:
-                    continue
-
-                logger.info(f"Found new image: {image.getName()} (ID: {image_id})")
-                self.processed_ids.add(image_id)
-                new_count += 1
-
-                # Yield to processor callback
-                if hasattr(self, "_process_callback") and self._process_callback:
-                    try:
-                        self._process_callback(image)
-                    except Exception as e:
-                        logger.error(f"Error processing image {image_id}: {e}")
-
-            # Update last check time
-            self.last_check_time = datetime.now()
-
-        except Exception as e:
-            logger.error(f"Error during poll: {e}")
-
-        return new_count
 
     def run(self, process_callback=None):
         """Run the monitor continuously.
@@ -142,21 +70,73 @@ class OmeroImageMonitor:
             f"Starting OMERO image monitor (poll interval: {self.poll_interval}s)"
         )
 
+        # On startup, scan all existing images to populate processed_ids
+        logger.info("Initial scan for existing images with ISCC annotations...")
+        initial_scan_count = 0
+        for image in self.conn.getObjects('Image'):
+            if self._has_iscc_annotation(image):
+                self.processed_ids.add(image.getId())
+                initial_scan_count += 1
+        logger.info(f"Found {initial_scan_count} images with existing ISCC annotations")
+
         while self._running:
             try:
-                # Poll for new images
-                new_count = self.poll_once()
+                logger.debug("Starting poll cycle")
+
+                # Simple approach: get all images, check which ones need processing
+                new_count = 0
+                processed_in_cycle = 0
+
+                try:
+                    # Process images in batches to limit memory usage
+                    for image in self.conn.getObjects('Image'):
+                        image_id = image.getId()
+
+                        # Skip if already processed in this session
+                        if image_id in self.processed_ids:
+                            continue
+
+                        # Check if has ISCC annotation (double-check in case added externally)
+                        if self._has_iscc_annotation(image):
+                            logger.debug(f"Image {image_id} has ISCC annotation (added externally?)")
+                            self.processed_ids.add(image_id)
+                            continue
+
+                        # This is an unprocessed image - process it
+                        logger.info(f"Found unprocessed image: {image.getName()} (ID: {image_id})")
+                        new_count += 1
+
+                        if self._process_callback:
+                            try:
+                                self._process_callback(image)
+                                self.processed_ids.add(image_id)
+                                processed_in_cycle += 1
+                                logger.info(f"Successfully processed image {image_id}")
+                            except Exception as e:
+                                logger.error(f"Error processing image {image_id}: {e}")
+
+                        # Respect batch size limit
+                        if processed_in_cycle >= self.batch_size:
+                            logger.info(f"Reached batch size limit ({self.batch_size}), will continue in next cycle")
+                            break
+
+                except Exception as e:
+                    logger.error(f"Error during image polling: {e}", exc_info=True)
+
                 if new_count > 0:
-                    logger.info(f"Processed {new_count} new images")
+                    logger.info(f"Processed {processed_in_cycle} of {new_count} unprocessed images")
+                else:
+                    logger.debug("No unprocessed images found")
 
                 # Wait before next poll
+                logger.debug(f"Sleeping for {self.poll_interval} seconds")
                 time.sleep(self.poll_interval)
 
             except KeyboardInterrupt:
                 logger.info("Monitor interrupted by user")
                 break
             except Exception as e:
-                logger.error(f"Unexpected error in monitor loop: {e}")
+                logger.error(f"Unexpected error in monitor loop: {e}", exc_info=True)
                 time.sleep(self.poll_interval)
 
     def stop(self):
