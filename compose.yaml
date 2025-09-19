@@ -38,6 +38,27 @@ services:
     networks:
       - omero-net
 
+  iscc-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - omero-server
+    environment:
+      OMERO_ISCC_HOST: omero-server
+      OMERO_ISCC_PORT: 4064
+      OMERO_ISCC_USERNAME: root
+      OMERO_ISCC_PASSWORD: omero
+      OMERO_ISCC_POLL_INTERVAL: 5
+      OMERO_ISCC_BATCH_SIZE: 100
+      OMERO_ISCC_NAMESPACE: org.iscc.omero.sum
+      OMERO_ISCC_LOG_LEVEL: info
+    restart: unless-stopped
+    networks:
+      - omero-net
+    volumes:
+      - ./logs:/app/logs
+
 networks:
   omero-net:
 

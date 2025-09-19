@@ -212,7 +212,7 @@ __marimo__/
 
 # Docker host mapping
 omero-data
-
+logs
 testdata
 
 # AI

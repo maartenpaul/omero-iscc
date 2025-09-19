@@ -28,9 +28,9 @@ def set_image_metadata(host, username, password, image_id, kv_pairs):
 
 
 if __name__ == "__main__":
-    host = 'localhost'
-    username = 'root'
-    password = 'omero'
+    host = "localhost"
+    username = "root"
+    password = "omero"
     image_id = 3
 
     # Example key-value pairs

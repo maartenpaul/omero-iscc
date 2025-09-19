@@ -11,14 +11,16 @@ import yaml
 from paramiko import SSHClient, AutoAddPolicy
 
 
-def run_remote_command(ssh: SSHClient, command: str, check: bool = True) -> tuple[str, str, int]:
+def run_remote_command(
+    ssh: SSHClient, command: str, check: bool = True
+) -> tuple[str, str, int]:
     """Execute command on remote server."""
     print(f"Running: {command[:100]}...")
     stdin, stdout, stderr = ssh.exec_command(command, get_pty=True)
     exit_status = stdout.channel.recv_exit_status()
 
-    out = stdout.read().decode('utf-8')
-    err = stderr.read().decode('utf-8')
+    out = stdout.read().decode("utf-8")
+    err = stderr.read().decode("utf-8")
 
     if check and exit_status != 0:
         print(f"Command failed with exit code {exit_status}")
@@ -84,6 +86,9 @@ def create_compose_config(domain: str) -> str:
       - omero-server
     environment:
       OMEROHOST: omero-server
+      CONFIG_omero_web_csrf__trusted__origins: '["https://{domain}"]'
+      CONFIG_omero_web_secure__proxy__ssl__header: '["HTTP_X_FORWARDED_PROTO", "https"]'
+      CONFIG_omero_web_use__x__forwarded__host: "true"
     networks:
       - caddy
       - omero-internal
@@ -114,12 +119,14 @@ ROOTPASS=omero
 
 
 @click.command()
-@click.option('--host', default='omero.iscc.id', help='Hostname or IP of the droplet')
-@click.option('--user', default='root', help='SSH username')
-@click.option('--domain', default='omero.iscc.id', help='Domain for HTTPS')
-@click.option('--key-file', default=None, help='Path to SSH private key file')
-@click.option('--password', default=None, help='SSH password (if not using key)')
-def deploy(host: str, user: str, domain: str, key_file: Optional[str], password: Optional[str]):
+@click.option("--host", default="omero.iscc.id", help="Hostname or IP of the droplet")
+@click.option("--user", default="root", help="SSH username")
+@click.option("--domain", default="omero.iscc.id", help="Domain for HTTPS")
+@click.option("--key-file", default=None, help="Path to SSH private key file")
+@click.option("--password", default=None, help="SSH password (if not using key)")
+def deploy(
+    host: str, user: str, domain: str, key_file: Optional[str], password: Optional[str]
+):
     """Deploy OMERO to Digital Ocean droplet."""
     print(f"🚀 Deploying OMERO to {host}")
 
@@ -130,21 +137,17 @@ def deploy(host: str, user: str, domain: str, key_file: Optional[str], password:
     try:
         # Connect to server
         print(f"📡 Connecting to {user}@{host}...")
-        connect_kwargs = {
-            'hostname': host,
-            'username': user,
-            'timeout': 30
-        }
+        connect_kwargs = {"hostname": host, "username": user, "timeout": 30}
 
         if key_file:
             key_path = Path(key_file).expanduser()
             if key_path.exists():
-                connect_kwargs['key_filename'] = str(key_path)
+                connect_kwargs["key_filename"] = str(key_path)
             else:
                 print(f"Warning: Key file {key_file} not found, trying default keys")
 
         if password:
-            connect_kwargs['password'] = password
+            connect_kwargs["password"] = password
 
         ssh.connect(**connect_kwargs)
         print("✅ Connected successfully")
@@ -168,7 +171,7 @@ def deploy(host: str, user: str, domain: str, key_file: Optional[str], password:
                 "apt-get update",
                 "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
                 "systemctl enable docker",
-                "systemctl start docker"
+                "systemctl start docker",
             ]
 
             for cmd in commands:
@@ -183,7 +186,9 @@ def deploy(host: str, user: str, domain: str, key_file: Optional[str], password:
 
         # Create external caddy network
         print("🌐 Creating external caddy network...")
-        run_remote_command(ssh, "docker network create caddy 2>/dev/null || true", check=False)
+        run_remote_command(
+            ssh, "docker network create caddy 2>/dev/null || true", check=False
+        )
 
         # Upload Docker Compose configuration
         print("📝 Creating Docker Compose configuration...")
@@ -191,11 +196,11 @@ def deploy(host: str, user: str, domain: str, key_file: Optional[str], password:
 
         # Write compose file
         sftp = ssh.open_sftp()
-        with sftp.open('/opt/omero/compose.yaml', 'w') as f:
+        with sftp.open("/opt/omero/compose.yaml", "w") as f:
             f.write(compose_content)
 
         # Write .env file
-        with sftp.open('/opt/omero/.env', 'w') as f:
+        with sftp.open("/opt/omero/.env", "w") as f:
             f.write(create_env_file())
 
         sftp.close()
@@ -219,9 +224,9 @@ def deploy(host: str, user: str, domain: str, key_file: Optional[str], password:
         print(out)
 
         # Display access information
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("✅ OMERO deployment complete!")
-        print("="*60)
+        print("=" * 60)
         print(f"\n📌 Access your OMERO instance at:")
         print(f"   Web Interface: https://{domain}")
         print(f"   API/Insight:   {host}:4064")
@@ -233,8 +238,10 @@ def deploy(host: str, user: str, domain: str, key_file: Optional[str], password:
         print("   View logs:    cd /opt/omero && docker compose logs -f")
         print("   Stop:         cd /opt/omero && docker compose down")
         print("   Restart:      cd /opt/omero && docker compose restart")
-        print("   Update:       cd /opt/omero && docker compose pull && docker compose up -d")
-        print("="*60)
+        print(
+            "   Update:       cd /opt/omero && docker compose pull && docker compose up -d"
+        )
+        print("=" * 60)
 
     except Exception as e:
         print(f"❌ Deployment failed: {e}")
@@ -243,5 +250,5 @@ def deploy(host: str, user: str, domain: str, key_file: Optional[str], password:
         ssh.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     deploy()

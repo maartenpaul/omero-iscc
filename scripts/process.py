@@ -4,6 +4,7 @@ import pathlib
 
 HERE = pathlib.Path(__file__).parent.absolute()
 
+
 def download_original_file(conn, image_id, target_directory):
     image = conn.getObject("Image", image_id)
     if image is None:
@@ -17,13 +18,14 @@ def download_original_file(conn, image_id, target_directory):
         file_size = original_file.getSize()
 
         print(
-            f"Downloading file '{file_name}' (ID: {file_id}, size: {file_size} bytes)")
+            f"Downloading file '{file_name}' (ID: {file_id}, size: {file_size} bytes)"
+        )
 
         # Prepare local file path
         local_file_path = os.path.join(target_directory, file_name)
 
         # Download original file from OMERO
-        with open(local_file_path, 'wb') as local_file:
+        with open(local_file_path, "wb") as local_file:
             for chunk in original_file.getFileInChunks():
                 local_file.write(chunk)
 
@@ -47,8 +49,11 @@ def list_images(conn):
         # if not identifiers:
         #     print(f"Processing image ID: {image.id}")
 
+
 def process_new_images(conn):
-    new_images = conn.getObjects("Image", opts={'order_by': 'creationEvent', 'limit': 10})
+    new_images = conn.getObjects(
+        "Image", opts={"order_by": "creationEvent", "limit": 10}
+    )
     for image in new_images:
         identifier = "ISCC:GABW5LUBVP23N3DOD7PPINHT5JKBI"
 
@@ -61,7 +66,6 @@ def process_new_images(conn):
 
 
 if __name__ == "__main__":
-
     conn = BlitzGateway("root", "omero", host="localhost", port=4064, secure=True)
     if conn.connect():
         # print(list_images(conn))

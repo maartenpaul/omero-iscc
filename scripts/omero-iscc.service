@@ -1,0 +1,43 @@
+[Unit]
+Description=OMERO ISCC-SUM Service
+Documentation=https://github.com/yourusername/omero-iscc
+After=network.target omero-server.service
+Wants=omero-server.service
+
+[Service]
+Type=simple
+User=omero
+Group=omero
+WorkingDirectory=/opt/omero/omero-iscc
+
+# Environment configuration
+Environment="OMERO_ISCC_HOST=localhost"
+Environment="OMERO_ISCC_PORT=4064"
+Environment="OMERO_ISCC_USERNAME=root"
+Environment="OMERO_ISCC_PASSWORD=omero"
+Environment="OMERO_ISCC_POLL_INTERVAL=60"
+Environment="OMERO_ISCC_LOG_LEVEL=info"
+
+# Command to run
+ExecStart=/opt/omero/venv/bin/python -m omero_iscc
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security settings
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/omero/omero-iscc/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=omero-iscc
+
+[Install]
+WantedBy=multi-user.target

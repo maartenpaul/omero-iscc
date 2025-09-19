@@ -16,7 +16,7 @@ class IsccImageProcessor:
         self,
         conn: BlitzGateway,
         namespace: str = "org.iscc.omero.sum",
-        chunk_size: int = 1024 * 1024  # 1MB chunks
+        chunk_size: int = 1024 * 1024,  # 1MB chunks
     ):
         """Initialize the ISCC image processor.
 
@@ -54,7 +54,9 @@ class IsccImageProcessor:
             orig_file = original_files[0]
             file_size = orig_file.getSize()
 
-            logger.debug(f"Processing original file: {orig_file.getName()} ({file_size} bytes)")
+            logger.debug(
+                f"Processing original file: {orig_file.getName()} ({file_size} bytes)"
+            )
 
             # Generate ISCC from original file data
             iscc_code = self._generate_iscc_for_file(orig_file)
@@ -129,10 +131,7 @@ class IsccImageProcessor:
                     pass
 
     def _store_iscc_annotation(
-        self,
-        image: ImageWrapper,
-        iscc_code: str,
-        file_name: str
+        self, image: ImageWrapper, iscc_code: str, file_name: str
     ):
         """Store ISCC code as MapAnnotation on image.
 
@@ -152,7 +151,7 @@ class IsccImageProcessor:
                 ["iscc:version", "1.0"],
                 ["iscc:source_file", file_name],
                 ["iscc:timestamp", datetime.now().isoformat()],
-                ["iscc:processor", "omero-iscc-service"]
+                ["iscc:processor", "omero-iscc-service"],
             ]
 
             map_ann.setValue(annotation_data)
@@ -179,12 +178,12 @@ class IsccImageProcessor:
         try:
             for ann in image.listAnnotations():
                 if ann.getNs() == self.namespace:
-                    if hasattr(ann, 'getValue'):
+                    if hasattr(ann, "getValue"):
                         values = ann.getValue()
                         # Convert to dictionary
                         result = {}
                         for key, value in values:
-                            if key.startswith('iscc:'):
+                            if key.startswith("iscc:"):
                                 result[key] = value
                         if result:
                             return result

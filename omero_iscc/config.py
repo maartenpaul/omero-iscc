@@ -105,7 +105,7 @@ class ServiceConfig:
         Args:
             path: Path to save file
         """
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
 

@@ -5,6 +5,7 @@ import pathlib
 HERE = pathlib.Path(__file__).parent.absolute()
 PROJECT_ROOT = HERE.parent.absolute()
 
+
 def omero_render_images(host, username, password, image_id, target_dir=PROJECT_ROOT):
     conn = BlitzGateway(username, password, host=host, port=4064, secure=True)
     if not conn.connect():
@@ -28,10 +29,8 @@ def omero_render_images(host, username, password, image_id, target_dir=PROJECT_R
 
 # Example usage:
 if __name__ == "__main__":
-    host = 'localhost'
-    username = 'root'
-    password = 'omero'
+    host = "localhost"
+    username = "root"
+    password = "omero"
     image_id = 1  # replace with your image ID
     omero_render_images(host, username, password, image_id)
-
-

@@ -30,7 +30,7 @@ def test_connection(config: ServiceConfig) -> bool:
         passwd=config.password,
         host=config.host,
         port=config.port,
-        secure=config.secure
+        secure=config.secure,
     )
 
     if conn.connect():
@@ -60,7 +60,7 @@ def test_image_processing(config: ServiceConfig) -> bool:
         passwd=config.password,
         host=config.host,
         port=config.port,
-        secure=config.secure
+        secure=config.secure,
     )
 
     if not conn.connect():
@@ -179,7 +179,7 @@ def test_recent_images(config: ServiceConfig) -> bool:
         passwd=config.password,
         host=config.host,
         port=config.port,
-        secure=config.secure
+        secure=config.secure,
     )
 
     if not conn.connect():
@@ -202,13 +202,15 @@ def test_recent_images(config: ServiceConfig) -> bool:
         for image in images:
             iscc_data = processor.get_iscc_for_image(image)
             if iscc_data:
-                iscc_code = iscc_data.get('iscc:sum', 'N/A')
+                iscc_code = iscc_data.get("iscc:sum", "N/A")
                 status = "✓ Has ISCC"
             else:
                 iscc_code = "Not processed"
                 status = "  No ISCC"
 
-            print(f"    {status} | ID: {image.getId():4d} | {image.getName()[:40]:40s} | {iscc_code}")
+            print(
+                f"    {status} | ID: {image.getId():4d} | {image.getName()[:40]:40s} | {iscc_code}"
+            )
 
         return True
 
@@ -222,22 +224,23 @@ def test_recent_images(config: ServiceConfig) -> bool:
 
 def main():
     """Run tests for OMERO ISCC service."""
-    parser = argparse.ArgumentParser(description='Test OMERO ISCC Service')
-    parser.add_argument('--host', default='localhost', help='OMERO server host')
-    parser.add_argument('--port', type=int, default=4064, help='OMERO server port')
-    parser.add_argument('--username', default='root', help='OMERO username')
-    parser.add_argument('--password', default='omero', help='OMERO password')
-    parser.add_argument('--test', choices=['all', 'connection', 'processing', 'service', 'list'],
-                        default='all', help='Which test to run')
+    parser = argparse.ArgumentParser(description="Test OMERO ISCC Service")
+    parser.add_argument("--host", default="localhost", help="OMERO server host")
+    parser.add_argument("--port", type=int, default=4064, help="OMERO server port")
+    parser.add_argument("--username", default="root", help="OMERO username")
+    parser.add_argument("--password", default="omero", help="OMERO password")
+    parser.add_argument(
+        "--test",
+        choices=["all", "connection", "processing", "service", "list"],
+        default="all",
+        help="Which test to run",
+    )
 
     args = parser.parse_args()
 
     # Create config
     config = ServiceConfig(
-        host=args.host,
-        port=args.port,
-        username=args.username,
-        password=args.password
+        host=args.host, port=args.port, username=args.username, password=args.password
     )
 
     print("=" * 60)
@@ -248,25 +251,25 @@ def main():
     tests_failed = 0
 
     # Run tests based on selection
-    if args.test in ['all', 'connection']:
+    if args.test in ["all", "connection"]:
         if test_connection(config):
             tests_passed += 1
         else:
             tests_failed += 1
 
-    if args.test in ['all', 'list']:
+    if args.test in ["all", "list"]:
         if test_recent_images(config):
             tests_passed += 1
         else:
             tests_failed += 1
 
-    if args.test in ['all', 'processing']:
+    if args.test in ["all", "processing"]:
         if test_image_processing(config):
             tests_passed += 1
         else:
             tests_failed += 1
 
-    if args.test in ['all', 'service']:
+    if args.test in ["all", "service"]:
         if test_service_cycle(config):
             tests_passed += 1
         else:

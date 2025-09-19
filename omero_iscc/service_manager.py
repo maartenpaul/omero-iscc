@@ -39,20 +39,21 @@ class IsccServiceManager:
         # Configure root logger
         logging.basicConfig(
             level=log_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
         # Set specific levels for our modules
-        logging.getLogger('omero_iscc').setLevel(log_level)
+        logging.getLogger("omero_iscc").setLevel(log_level)
 
         # Reduce noise from OMERO libraries if not in debug mode
         if log_level != logging.DEBUG:
-            logging.getLogger('omero').setLevel(logging.WARNING)
-            logging.getLogger('Blitz').setLevel(logging.WARNING)
+            logging.getLogger("omero").setLevel(logging.WARNING)
+            logging.getLogger("Blitz").setLevel(logging.WARNING)
 
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown."""
+
         def signal_handler(signum, frame):
             logger.info(f"Received signal {signum}, shutting down...")
             self.stop()
@@ -68,14 +69,16 @@ class IsccServiceManager:
             True if connection successful
         """
         try:
-            logger.info(f"Connecting to OMERO server at {self.config.host}:{self.config.port}")
+            logger.info(
+                f"Connecting to OMERO server at {self.config.host}:{self.config.port}"
+            )
 
             self.conn = BlitzGateway(
                 username=self.config.username,
                 passwd=self.config.password,
                 host=self.config.host,
                 port=self.config.port,
-                secure=self.config.secure
+                secure=self.config.secure,
             )
 
             if not self.conn.connect():
@@ -114,7 +117,7 @@ class IsccServiceManager:
         self.processor = IsccImageProcessor(
             conn=self.conn,
             namespace=self.config.namespace,
-            chunk_size=self.config.chunk_size
+            chunk_size=self.config.chunk_size,
         )
 
         # Initialize monitor
@@ -122,7 +125,7 @@ class IsccServiceManager:
             conn=self.conn,
             poll_interval=self.config.poll_interval,
             batch_size=self.config.batch_size,
-            namespace=self.config.namespace
+            namespace=self.config.namespace,
         )
 
         logger.info("Service components initialized")
@@ -141,14 +144,18 @@ class IsccServiceManager:
             # Check if already processed
             existing_iscc = self.processor.get_iscc_for_image(image)
             if existing_iscc:
-                logger.debug(f"Image {image.getId()} already has ISCC: {existing_iscc.get('iscc:sum')}")
+                logger.debug(
+                    f"Image {image.getId()} already has ISCC: {existing_iscc.get('iscc:sum')}"
+                )
                 return
 
             # Process the image
             iscc_code = self.processor.process_image(image)
 
             if iscc_code:
-                logger.info(f"Successfully processed image {image.getId()}: {iscc_code}")
+                logger.info(
+                    f"Successfully processed image {image.getId()}: {iscc_code}"
+                )
 
                 # Optional: Send notification or update external system
                 if self.config.webhook_url:
@@ -174,14 +181,10 @@ class IsccServiceManager:
                 "image_id": image.getId(),
                 "image_name": image.getName(),
                 "iscc_code": iscc_code,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
 
-            response = requests.post(
-                self.config.webhook_url,
-                json=payload,
-                timeout=10
-            )
+            response = requests.post(self.config.webhook_url, json=payload, timeout=10)
 
             if response.status_code == 200:
                 logger.debug(f"Webhook notification sent for image {image.getId()}")
@@ -257,15 +260,17 @@ class IsccServiceManager:
                 "host": self.config.host,
                 "port": self.config.port,
                 "poll_interval": self.config.poll_interval,
-                "namespace": self.config.namespace
+                "namespace": self.config.namespace,
             },
             "monitor": {
                 "active": self.monitor is not None,
                 "last_check": self.monitor.last_check_time.isoformat()
-                if self.monitor and self.monitor.last_check_time else None,
+                if self.monitor and self.monitor.last_check_time
+                else None,
                 "processed_count": len(self.monitor.processed_ids)
-                if self.monitor else 0
-            }
+                if self.monitor
+                else 0,
+            },
         }
 
 
@@ -273,17 +278,21 @@ def main():
     """Main entry point for the service."""
     import argparse
 
-    parser = argparse.ArgumentParser(description='OMERO ISCC-SUM Service')
-    parser.add_argument('--config', type=Path, help='Path to configuration file')
-    parser.add_argument('--host', help='OMERO server host')
-    parser.add_argument('--port', type=int, help='OMERO server port')
-    parser.add_argument('--username', help='OMERO username')
-    parser.add_argument('--password', help='OMERO password')
-    parser.add_argument('--poll-interval', type=int, help='Poll interval in seconds')
-    parser.add_argument('--log-level', choices=['debug', 'info', 'warning', 'error'],
-                        help='Logging level')
-    parser.add_argument('--once', action='store_true',
-                        help='Run once and exit (for testing)')
+    parser = argparse.ArgumentParser(description="OMERO ISCC-SUM Service")
+    parser.add_argument("--config", type=Path, help="Path to configuration file")
+    parser.add_argument("--host", help="OMERO server host")
+    parser.add_argument("--port", type=int, help="OMERO server port")
+    parser.add_argument("--username", help="OMERO username")
+    parser.add_argument("--password", help="OMERO password")
+    parser.add_argument("--poll-interval", type=int, help="Poll interval in seconds")
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error"],
+        help="Logging level",
+    )
+    parser.add_argument(
+        "--once", action="store_true", help="Run once and exit (for testing)"
+    )
 
     args = parser.parse_args()
 

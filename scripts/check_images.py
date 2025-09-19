@@ -2,9 +2,10 @@
 
 from omero.gateway import BlitzGateway
 
+
 def check_images():
     """Check all images in OMERO."""
-    conn = BlitzGateway('root', 'omero', host='localhost', port=4064, secure=True)
+    conn = BlitzGateway("root", "omero", host="localhost", port=4064, secure=True)
 
     if not conn.connect():
         print("Failed to connect")
@@ -49,6 +50,7 @@ def check_images():
 
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     check_images()

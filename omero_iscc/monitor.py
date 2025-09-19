@@ -17,7 +17,7 @@ class OmeroImageMonitor:
         conn: BlitzGateway,
         poll_interval: int = 60,
         batch_size: int = 100,
-        namespace: str = "org.iscc.omero.sum"
+        namespace: str = "org.iscc.omero.sum",
     ):
         """Initialize the OMERO image monitor.
 
@@ -35,7 +35,9 @@ class OmeroImageMonitor:
         self.processed_ids: Set[int] = set()
         self._running = False
 
-    def get_new_images(self, since: Optional[datetime] = None) -> Generator[ImageWrapper, None, None]:
+    def get_new_images(
+        self, since: Optional[datetime] = None
+    ) -> Generator[ImageWrapper, None, None]:
         """Get images imported since the specified time.
 
         Args:
@@ -81,10 +83,10 @@ class OmeroImageMonitor:
             for ann in image.listAnnotations():
                 if ann.getNs() == self.namespace:
                     # Check if it's a MapAnnotation with ISCC data
-                    if hasattr(ann, 'getValue'):
+                    if hasattr(ann, "getValue"):
                         values = ann.getValue()
                         for key, _ in values:
-                            if key.startswith('iscc:'):
+                            if key.startswith("iscc:"):
                                 return True
         except Exception as e:
             logger.warning(f"Error checking annotations for image {image.getId()}: {e}")
@@ -113,7 +115,7 @@ class OmeroImageMonitor:
                 new_count += 1
 
                 # Yield to processor callback
-                if hasattr(self, '_process_callback') and self._process_callback:
+                if hasattr(self, "_process_callback") and self._process_callback:
                     try:
                         self._process_callback(image)
                     except Exception as e:
@@ -136,7 +138,9 @@ class OmeroImageMonitor:
         self._process_callback = process_callback
         self._running = True
 
-        logger.info(f"Starting OMERO image monitor (poll interval: {self.poll_interval}s)")
+        logger.info(
+            f"Starting OMERO image monitor (poll interval: {self.poll_interval}s)"
+        )
 
         while self._running:
             try:

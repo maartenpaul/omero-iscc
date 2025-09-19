@@ -57,7 +57,7 @@ def simple_upload_test(file_path):
             print("Uploading file...")
             uploader = proc.getUploader(0)
 
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 data = f.read()
                 uploader.write(data, 0, len(data))
 
@@ -92,6 +92,7 @@ def simple_upload_test(file_path):
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
     finally:
