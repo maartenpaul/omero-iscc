@@ -62,16 +62,39 @@ class IsccServiceManager:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-    def connect(self) -> bool:
+    def connect(self, suppress_errors=False) -> bool:
         """Establish connection to OMERO server.
+
+        Args:
+            suppress_errors: If True, suppress verbose error logs during connection
 
         Returns:
             True if connection successful
         """
+        # Temporarily adjust logging levels if suppressing errors
+        omero_loggers = []
+        original_levels = {}
+
+        if suppress_errors:
+            # Suppress multiple OMERO-related loggers
+            logger_names = [
+                "omero.gateway",
+                "omero",
+                "omero.clients",
+                "Ice",
+                "Glacier2",
+            ]
+            for name in logger_names:
+                logger_obj = logging.getLogger(name)
+                omero_loggers.append(logger_obj)
+                original_levels[name] = logger_obj.level
+                logger_obj.setLevel(logging.CRITICAL)
+
         try:
-            logger.info(
-                f"Connecting to OMERO server at {self.config.host}:{self.config.port}"
-            )
+            if not suppress_errors:
+                logger.info(
+                    f"Connecting to OMERO server at {self.config.host}:{self.config.port}"
+                )
 
             self.conn = BlitzGateway(
                 username=self.config.username,
@@ -82,7 +105,8 @@ class IsccServiceManager:
             )
 
             if not self.conn.connect():
-                logger.error("Failed to connect to OMERO server")
+                if not suppress_errors:
+                    logger.error("Failed to connect to OMERO server")
                 return False
 
             logger.info("Successfully connected to OMERO server")
@@ -94,8 +118,16 @@ class IsccServiceManager:
             return True
 
         except Exception as e:
-            logger.error(f"Connection error: {e}")
+            if not suppress_errors:
+                logger.error(f"Connection error: {e}")
             return False
+        finally:
+            # Restore original logging levels
+            if suppress_errors:
+                for logger_name, logger_obj in zip(
+                    original_levels.keys(), omero_loggers
+                ):
+                    logger_obj.setLevel(original_levels[logger_name])
 
     def disconnect(self):
         """Disconnect from OMERO server."""
@@ -194,16 +226,33 @@ class IsccServiceManager:
         except Exception as e:
             logger.warning(f"Failed to send webhook notification: {e}")
 
-
     def run(self):
         """Run the service continuously."""
         logger.info("Starting OMERO ISCC Service")
         self._running = True
 
-        # Connect to OMERO
-        if not self.connect():
-            logger.error("Failed to connect, exiting")
-            return
+        # Connect to OMERO with retries
+        max_retries = 30
+        retry_delay = 2
+        for attempt in range(max_retries):
+            # Suppress errors for all but first and last attempts
+            suppress = attempt > 0 and attempt < max_retries - 1
+            if self.connect(suppress_errors=suppress):
+                break
+            if attempt < max_retries - 1:
+                if attempt == 0:
+                    logger.info(f"OMERO server not ready, will retry connection...")
+                else:
+                    logger.info(
+                        f"Connection attempt {attempt + 1}/{max_retries} failed, retrying in {retry_delay}s..."
+                    )
+                time.sleep(retry_delay)
+                retry_delay = min(
+                    retry_delay * 1.5, 30
+                )  # Exponential backoff with max 30s
+            else:
+                logger.error("Failed to connect after all retries, exiting")
+                return
 
         try:
             # Initialize components

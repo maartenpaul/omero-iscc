@@ -33,7 +33,6 @@ class OmeroImageMonitor:
         self.processed_ids: Set[int] = set()
         self._running = False
 
-
     def _has_iscc_annotation(self, image) -> bool:
         """Check if image already has ISCC annotation.
 
@@ -56,7 +55,6 @@ class OmeroImageMonitor:
             logger.warning(f"Error checking annotations for image {image.getId()}: {e}")
         return False
 
-
     def run(self, process_callback=None):
         """Run the monitor continuously.
 
@@ -73,7 +71,7 @@ class OmeroImageMonitor:
         # On startup, scan all existing images to populate processed_ids
         logger.info("Initial scan for existing images with ISCC annotations...")
         initial_scan_count = 0
-        for image in self.conn.getObjects('Image'):
+        for image in self.conn.getObjects("Image"):
             if self._has_iscc_annotation(image):
                 self.processed_ids.add(image.getId())
                 initial_scan_count += 1
@@ -89,7 +87,7 @@ class OmeroImageMonitor:
 
                 try:
                     # Process images in batches to limit memory usage
-                    for image in self.conn.getObjects('Image'):
+                    for image in self.conn.getObjects("Image"):
                         image_id = image.getId()
 
                         # Skip if already processed in this session
@@ -98,12 +96,16 @@ class OmeroImageMonitor:
 
                         # Check if has ISCC annotation (double-check in case added externally)
                         if self._has_iscc_annotation(image):
-                            logger.debug(f"Image {image_id} has ISCC annotation (added externally?)")
+                            logger.debug(
+                                f"Image {image_id} has ISCC annotation (added externally?)"
+                            )
                             self.processed_ids.add(image_id)
                             continue
 
                         # This is an unprocessed image - process it
-                        logger.info(f"Found unprocessed image: {image.getName()} (ID: {image_id})")
+                        logger.info(
+                            f"Found unprocessed image: {image.getName()} (ID: {image_id})"
+                        )
                         new_count += 1
 
                         if self._process_callback:
@@ -117,14 +119,18 @@ class OmeroImageMonitor:
 
                         # Respect batch size limit
                         if processed_in_cycle >= self.batch_size:
-                            logger.info(f"Reached batch size limit ({self.batch_size}), will continue in next cycle")
+                            logger.info(
+                                f"Reached batch size limit ({self.batch_size}), will continue in next cycle"
+                            )
                             break
 
                 except Exception as e:
                     logger.error(f"Error during image polling: {e}", exc_info=True)
 
                 if new_count > 0:
-                    logger.info(f"Processed {processed_in_cycle} of {new_count} unprocessed images")
+                    logger.info(
+                        f"Processed {processed_in_cycle} of {new_count} unprocessed images"
+                    )
                 else:
                     logger.debug("No unprocessed images found")
 
