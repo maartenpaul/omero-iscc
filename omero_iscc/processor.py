@@ -1,7 +1,6 @@
 """Process OMERO images to generate ISCC-SUM identifiers."""
 
 import logging
-from datetime import datetime
 from typing import Optional, Dict, Any
 from iscc_sum import IsccSumProcessor
 from omero.gateway import BlitzGateway, ImageWrapper, MapAnnotationWrapper
@@ -36,7 +35,7 @@ class IsccImageProcessor:
             image: Image to process
 
         Returns:
-            ISCC code if successful, None otherwise
+            ISCC-SUM code if successful, None otherwise
         """
         image_id = image.getId()
         image_name = image.getName()
@@ -59,27 +58,28 @@ class IsccImageProcessor:
             )
 
             # Generate ISCC from original file data
-            iscc_code = self._generate_iscc_for_file(orig_file)
+            iscc_codes = self._generate_iscc_for_file(orig_file)
 
-            if iscc_code:
+            if iscc_codes:
                 # Store ISCC as annotation
-                self._store_iscc_annotation(image, iscc_code, orig_file.getName())
-                logger.info(f"Generated ISCC for image {image_id}: {iscc_code}")
-                return iscc_code
+                self._store_iscc_annotation(image, iscc_codes, orig_file.getName())
+                iscc_sum = iscc_codes.get("iscc:sum")
+                logger.info(f"Generated ISCC for image {image_id}: {iscc_sum}")
+                return iscc_sum
 
         except Exception as e:
             logger.error(f"Error processing image {image_id}: {e}", exc_info=True)
 
         return None
 
-    def _generate_iscc_for_file(self, original_file) -> Optional[str]:
+    def _generate_iscc_for_file(self, original_file) -> Optional[Dict[str, str]]:
         """Generate ISCC-SUM for an original file.
 
         Args:
             original_file: OriginalFile object from OMERO
 
         Returns:
-            ISCC code string or None if failed
+            Dictionary with ISCC codes (sum, data, inst) or None if failed
         """
         raw_store = None
         try:
@@ -115,9 +115,20 @@ class IsccImageProcessor:
                     if progress % 20 == 0:
                         logger.debug(f"Processing progress: {progress}%")
 
-            # Get final ISCC result
-            result = processor.result(wide=True, add_units=False)
-            return result.iscc
+            # Get final ISCC result with units
+            result = processor.result(wide=True, add_units=True)
+
+            # Extract ISCC codes
+            iscc_codes = {
+                "iscc:sum": result.iscc,
+            }
+
+            # Add data and instance units if available
+            if result.units and len(result.units) >= 2:
+                iscc_codes["iscc:data"] = result.units[0]
+                iscc_codes["iscc:inst"] = result.units[1]
+
+            return iscc_codes
 
         except Exception as e:
             logger.error(f"Error generating ISCC: {e}", exc_info=True)
@@ -131,13 +142,13 @@ class IsccImageProcessor:
                     pass
 
     def _store_iscc_annotation(
-        self, image: ImageWrapper, iscc_code: str, file_name: str
+        self, image: ImageWrapper, iscc_codes: Dict[str, str], file_name: str
     ):
-        """Store ISCC code as MapAnnotation on image.
+        """Store ISCC codes as MapAnnotation on image.
 
         Args:
             image: Image to annotate
-            iscc_code: ISCC identifier
+            iscc_codes: Dictionary with ISCC identifiers (iscc:sum, iscc:data, iscc:inst)
             file_name: Name of processed file
         """
         try:
@@ -145,14 +156,11 @@ class IsccImageProcessor:
             map_ann = MapAnnotationWrapper(self.conn)
             map_ann.setNs(self.namespace)
 
-            # Store ISCC and metadata
-            annotation_data = [
-                ["iscc:sum", iscc_code],
-                ["iscc:version", "1.0"],
-                ["iscc:source_file", file_name],
-                ["iscc:timestamp", datetime.now().isoformat()],
-                ["iscc:processor", "omero-iscc-service"],
-            ]
+            # Store only the ISCC codes (sum, data, inst)
+            annotation_data = []
+            for key in ["iscc:sum", "iscc:data", "iscc:inst"]:
+                if key in iscc_codes:
+                    annotation_data.append([key, iscc_codes[key]])
 
             map_ann.setValue(annotation_data)
             map_ann.save()
