@@ -6,7 +6,6 @@ from omero.gateway import BlitzGateway
 from omero.model import ExperimenterI, ExperimenterGroupI, PermissionsI
 from omero.rtypes import rstring, rbool
 import sys
-import subprocess
 
 
 def setup_public_access(host="localhost", root_password="omero"):
@@ -92,42 +91,17 @@ def setup_public_access(host="localhost", root_password="omero"):
             print("  This may cause issues with public web access")
 
         print("\n" + "="*60)
-        print("IMPORTANT: Web Configuration")
+        print("SUCCESS: Public Access Configured")
         print("="*60)
         print("\nThe public user has been created in OMERO server.")
         print("The compose.yaml already contains the necessary CONFIG_")
         print("environment variables for OMERO.web public access.")
-        print("\nTo activate public access, restart the web container:")
-        print("\n  docker compose restart omero-web")
-        print("\nAfter restart, you should be able to access:")
+        print("\nPublic access should now be active at:")
         print("  http://localhost:4080")
-        print("without being redirected to the login page.")
         print("\nPublic access credentials:")
         print(f"  Username: {public_username}")
         print(f"  Password: {public_password}")
         print(f"  Group: {public_group_name} (world-readable)")
-
-        # Optionally restart the web container automatically
-        print("\n" + "-"*60)
-        response = input("Do you want to restart omero-web container now? (y/N): ")
-        if response.lower() == 'y':
-            try:
-                print("Restarting omero-web container...")
-                result = subprocess.run(
-                    ["docker", "compose", "restart", "omero-web"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                if result.returncode == 0:
-                    print("✓ OMERO.web container restarted successfully")
-                    print("\nPublic access should now be active!")
-                    print("Try accessing: http://localhost:4080")
-                else:
-                    print(f"✗ Failed to restart container: {result.stderr}")
-            except Exception as e:
-                print(f"✗ Could not restart container: {e}")
-                print("Please run manually: docker compose restart omero-web")
 
         return True
 
