@@ -1,4 +1,4 @@
-"""Upload a bio image file to OMERO server using ManagedRepository."""
+"""Upload a bio image file to OMERO server as public user."""
 
 import sys
 import argparse
@@ -47,14 +47,7 @@ def create_project_and_dataset(conn, project_name, dataset_name):
 
 
 def calculate_sha1(file_path):
-    """Calculate SHA1 hash of a file.
-
-    Args:
-        file_path: Path to the file
-
-    Returns:
-        SHA1 hash as hex string
-    """
+    """Calculate SHA1 hash of a file."""
     sha1 = hashlib.sha1()
     with open(file_path, "rb") as f:
         while chunk := f.read(8192):
@@ -95,13 +88,10 @@ def upload_to_managed_repository(conn, file_path, dataset_id=None):
         settings.checksumAlgorithm = ChecksumAlgorithmI()
         settings.checksumAlgorithm.value = rtypes.rstring("SHA1-160")
 
-        # Important: Set the target dataset/project in settings
+        # Set the target dataset if provided
         if dataset_id:
             settings.doThumbnails = rtypes.rbool(True)
             settings.noStatsInfo = rtypes.rbool(False)
-            # Set the dataset as target - use the dataset wrapper properly
-            from omero.model import DatasetI
-
             target = DatasetI(dataset_id, False)
             settings.userSpecifiedTarget = target
             settings.userSpecifiedName = rtypes.rstring(file_path.name)
@@ -138,59 +128,27 @@ def upload_to_managed_repository(conn, file_path, dataset_id=None):
             print(f"\nUpload complete. Closing uploader...")
             uploader.close()
 
-            # Calculate checksum for verification
+            # Calculate and verify checksum
             print("Calculating checksum...")
             checksum = calculate_sha1(file_path)
 
-            # Verify the upload
             print("Verifying upload...")
             handle = proc.verifyUpload([checksum])
-
-            # The handle can be used to monitor the import process
             print(f"Import initiated. Handle: {handle}")
 
-            # Simple wait approach - the import will continue in background
+            # Wait for import to complete
             print("Waiting for server-side import to complete...")
             import time
+            time.sleep(10)
 
-            # Wait a reasonable time for import to complete
-            time.sleep(10)  # Wait 10 seconds for processing
-
-            # Check if any images were created
+            # Check for imported images
             print("Checking for newly imported images...")
-            try:
-                # Simple approach: check if new images appear
-                images = list(conn.getObjects("Image"))
-                if images:
-                    # Show the most recent image(s)
-                    recent_images = sorted(
-                        images, key=lambda x: x.getId(), reverse=True
-                    )[:3]
-                    print(f"Recent images in OMERO:")
-                    for img in recent_images:
-                        print(f"  Image: {img.getName()} (ID: {img.getId()})")
-
-                        # Check if this image is in our target dataset
-                        if dataset_id:
-                            dataset = conn.getObject("Dataset", dataset_id)
-                            if dataset:
-                                dataset_images = list(dataset.listChildren())
-                                img_ids = [img.getId() for img in dataset_images]
-                                if img.getId() in img_ids:
-                                    print(
-                                        f"    ✓ Linked to dataset '{dataset.getName()}' (ID: {dataset_id})"
-                                    )
-                                else:
-                                    print(
-                                        f"    ⚠ Not linked to target dataset - may be orphaned"
-                                    )
-                else:
-                    print("No images found in OMERO")
-            except Exception as e:
-                print(f"Error checking for imported images: {e}")
-                print(
-                    "The import may still have succeeded - check OMERO.web to confirm."
-                )
+            images = list(conn.getObjects("Image"))
+            if images:
+                recent = sorted(images, key=lambda x: x.getId(), reverse=True)[:3]
+                print(f"Recent images:")
+                for img in recent:
+                    print(f"  - {img.getName()} (ID: {img.getId()})")
 
             return True
 
@@ -200,7 +158,6 @@ def upload_to_managed_repository(conn, file_path, dataset_id=None):
     except Exception as e:
         print(f"Error during upload: {e}")
         import traceback
-
         traceback.print_exc()
         return False
 
@@ -209,20 +166,16 @@ def import_bioimage(
     file_path,
     host="localhost",
     port=4064,
-    username="root",
-    password="omero",
     dataset_id=None,
     project_name=None,
     dataset_name=None,
 ):
-    """Import a bio-image file to OMERO using ManagedRepository.
+    """Import a bio-image file to OMERO as the public user.
 
     Args:
         file_path: Path to the bio-image file
         host: OMERO server hostname
         port: OMERO server port
-        username: OMERO username
-        password: OMERO password
         dataset_id: Optional existing dataset ID to import into
         project_name: Name for new project (if dataset_id not provided)
         dataset_name: Name for new dataset (if dataset_id not provided)
@@ -235,23 +188,32 @@ def import_bioimage(
         print(f"Error: File not found: {file_path}")
         return False
 
-    print(f"Connecting to OMERO server at {host}:{port}...")
+    # Connect as public user to upload directly to their account
+    # This ensures images are visible when browsing as public user
+    username = "public"
+    password = "public"
+
+    print(f"Connecting to OMERO as '{username}' user...")
     conn = BlitzGateway(username, password, host=host, port=port, secure=True)
 
     if not conn.connect():
-        print("Failed to connect to OMERO server")
+        print(f"Failed to connect as '{username}' user")
+        print("Make sure to run make_public.py first to create the public user")
         return False
 
     try:
-        # If no dataset_id provided, create project/dataset
+        # Show current group context
+        current_group = conn.getGroupFromContext()
+        if current_group:
+            print(f"Connected in group: {current_group.getName()} (ID: {current_group.getId()})")
+
+        # If no dataset_id provided, create or find project/dataset
         if dataset_id is None and (project_name or dataset_name):
-            project_name = project_name or "Imported Images"
-            dataset_name = dataset_name or "Import Dataset"
+            project_name = project_name or "Public Images"
+            dataset_name = dataset_name or "Public Dataset"
 
             # Check if project already exists
-            projects = list(
-                conn.getObjects("Project", attributes={"name": project_name})
-            )
+            projects = list(conn.getObjects("Project", attributes={"name": project_name}))
             if projects:
                 project = projects[0]
                 project_id = project.getId()
@@ -267,9 +229,7 @@ def import_bioimage(
 
                 if dataset:
                     dataset_id = dataset.getId()
-                    print(
-                        f"Using existing dataset '{dataset_name}' with ID: {dataset_id}"
-                    )
+                    print(f"Using existing dataset '{dataset_name}' with ID: {dataset_id}")
                 else:
                     # Create new dataset in existing project
                     dataset = DatasetI()
@@ -293,9 +253,8 @@ def import_bioimage(
         success = upload_to_managed_repository(conn, file_path, dataset_id)
 
         if success:
-            print(f"\nSuccessfully initiated import of: {file_path}")
-            print("Note: The server is now processing the file with Bio-Formats.")
-            print("Check OMERO.web or OMERO.insight to see the imported image.")
+            print(f"\nSuccessfully uploaded: {file_path}")
+            print("The image should now be visible at: http://localhost:4080")
 
         return success
 
@@ -306,7 +265,7 @@ def import_bioimage(
 def main():
     """Main function to upload bio image files to OMERO."""
     parser = argparse.ArgumentParser(
-        description="Upload bio-image files to OMERO server"
+        description="Upload bio-image files to OMERO server as public user"
     )
     parser.add_argument(
         "file",
@@ -320,21 +279,15 @@ def main():
     parser.add_argument(
         "--port", type=int, default=4064, help="OMERO server port (default: 4064)"
     )
-    parser.add_argument(
-        "--username", "-u", default="root", help="OMERO username (default: root)"
-    )
-    parser.add_argument(
-        "--password", "-w", default="omero", help="OMERO password (default: omero)"
-    )
     parser.add_argument("--dataset", "-d", type=int, help="Dataset ID to import into")
     parser.add_argument(
         "--project-name",
-        default="Test Project",
+        default="Public Images",
         help="Name for new project (if no dataset ID provided)",
     )
     parser.add_argument(
         "--dataset-name",
-        default="Test Dataset",
+        default="Public Dataset",
         help="Name for new dataset (if no dataset ID provided)",
     )
 
@@ -344,8 +297,6 @@ def main():
         args.file,
         host=args.host,
         port=args.port,
-        username=args.username,
-        password=args.password,
         dataset_id=args.dataset,
         project_name=args.project_name,
         dataset_name=args.dataset_name,

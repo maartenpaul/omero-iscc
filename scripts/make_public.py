@@ -8,16 +8,16 @@ from omero.model import ExperimenterI, ExperimenterGroupI, PermissionsI
 from omero.rtypes import rstring, rbool
 import sys
 
-# Suppress expected warnings from omero.gateway when looking up non-existent entities
+# Suppress expected warnings
 logging.getLogger("omero.gateway").setLevel(logging.ERROR)
 
 
 def setup_public_access(host="localhost", root_password="omero"):
-    """Create and configure public user for OMERO web access without login."""
+    """Create and configure public user for OMERO web access."""
 
     # Public user credentials - MUST match compose.yaml CONFIG values
     public_username = "public"
-    public_password = "public"  # Must match compose.yaml
+    public_password = "public"
     public_group_name = "public_group"
 
     # Connect as root
@@ -29,25 +29,19 @@ def setup_public_access(host="localhost", root_password="omero"):
             return False
 
         print("Connected as root")
-
-        # Get admin service
         admin = conn.getAdminService()
 
         # Create public group with world-readable permissions (rwrwrw)
         try:
             existing_group = admin.lookupGroup(public_group_name)
-            print(
-                f"Group '{public_group_name}' already exists with ID: {existing_group.id.val}"
-            )
+            print(f"Group '{public_group_name}' already exists with ID: {existing_group.id.val}")
             public_group = existing_group
         except omero.ApiUsageException:
             print(f"Creating public group '{public_group_name}'...")
             public_group = ExperimenterGroupI()
             public_group.name = rstring(public_group_name)
             public_group.ldap = rbool(False)
-            public_group.description = rstring(
-                "Public access group for login-free web viewing"
-            )
+            public_group.description = rstring("Public access group for web viewing")
 
             # Set world-readable permissions (rwrwrw)
             perms = PermissionsI("rwrwrw")
@@ -57,16 +51,26 @@ def setup_public_access(host="localhost", root_password="omero"):
             public_group = admin.getGroup(group_id)
             print(f"Created public group with ID: {group_id}")
 
-        # Create public user
-        public_user_exists = False
+        # Create or update public user
         try:
             existing_user = admin.lookupExperimenter(public_username)
-            print(
-                f"User '{public_username}' already exists with ID: {existing_user.id.val}"
-            )
-            public_user_exists = True
-            # Note: Cannot verify/change password for existing user without knowing the old password
-            print(f"Using existing user '{public_username}'")
+            print(f"User '{public_username}' already exists with ID: {existing_user.id.val}")
+
+            # Ensure public user is member of public_group
+            user_groups = admin.containedGroups(existing_user.id.val)
+            group_ids = [g.id.val for g in user_groups]
+
+            if public_group.id.val not in group_ids:
+                print(f"Adding existing user to public_group...")
+                admin.addGroups(existing_user, [public_group])
+
+            # Set public_group as default group
+            admin.setDefaultGroup(existing_user, public_group)
+            print(f"Set public_group as default for existing user")
+
+            # Note: We cannot reset the password for an existing user
+            print(f"Note: Using existing password for user '{public_username}'")
+
         except omero.ApiUsageException:
             print(f"Creating public user '{public_username}'...")
             public_user = ExperimenterI()
@@ -76,50 +80,42 @@ def setup_public_access(host="localhost", root_password="omero"):
             public_user.email = rstring("public@localhost")
             public_user.ldap = rbool(False)
 
-            # Add to public group and default user group
+            # Get the default "user" group that all users should belong to
             groups = [public_group]
             try:
                 user_group = admin.lookupGroup("user")
                 groups.append(user_group)
+                print(f"Adding to default 'user' group")
             except:
                 pass
 
+            # Create user with public_group as primary/default group
+            # but also member of 'user' group for authentication
             user_id = admin.createExperimenterWithPassword(
                 public_user, rstring(public_password), public_group, groups
             )
             print(f"Created public user with ID: {user_id}")
 
-        # Verify user can actually log in
+        # Verify authentication
         print(f"\nVerifying public user can authenticate...")
-        test_conn = BlitzGateway(
-            public_username, public_password, host=host, port=4064, secure=True
-        )
+        test_conn = BlitzGateway(public_username, public_password, host=host, port=4064, secure=True)
         if test_conn.connect():
-            print(f"✓ Public user '{public_username}' can authenticate successfully")
+            print(f"✓ Public user can authenticate successfully")
             test_conn.close()
         else:
-            print(f"✗ WARNING: Public user '{public_username}' cannot authenticate!")
-            print("  This may cause issues with public web access")
+            print(f"✗ WARNING: Public user cannot authenticate!")
 
         print("\n" + "=" * 60)
         print("SUCCESS: Public Access Configured")
         print("=" * 60)
-        print("\nThe public user has been created in OMERO server.")
-        print("The compose.yaml already contains the necessary CONFIG_")
-        print("environment variables for OMERO.web public access.")
-        print("\nPublic access should now be active at:")
-        print("  http://localhost:4080")
-        print("\nPublic access credentials:")
-        print(f"  Username: {public_username}")
-        print(f"  Password: {public_password}")
-        print(f"  Group: {public_group_name} (world-readable)")
+        print("\nPublic access is now active at: http://localhost:4080")
+        print(f"Username: {public_username}, Password: {public_password}")
 
         return True
 
     except Exception as e:
         print(f"Error during setup: {e}")
         import traceback
-
         traceback.print_exc()
         return False
 
