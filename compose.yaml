@@ -20,13 +20,10 @@ services:
       CONFIG_omero_db_name: omero
       CONFIG_omero_db_host: omero-db
       ROOTPASS: omero
-#      # Public user configuration
-#      CONFIG_omero_web_public_enabled: "true"
-#      CONFIG_omero_web_public_user: "public"
-#      CONFIG_omero_web_public_password: "public"
-#      CONFIG_omero_web_public_server__id: "1"
-#      # Download policy - open for public access
-#      CONFIG_omero_policy_binary__access: "+read,+write,+image,+plate,+screen"
+      # Create a public user for read-only access
+      CONFIG_omero_web_public_enabled: "true"
+      CONFIG_omero_web_public_user: "public"
+      CONFIG_omero_web_public_password: "public"
     networks:
       - omero-net
     volumes:
@@ -40,16 +37,13 @@ services:
       - omero-server
     environment:
       OMEROHOST: omero-server
-#      # Public browsing configuration
-#      CONFIG_omero_web_public_enabled: "true"
-#      CONFIG_omero_web_public_user: "public"
-#      CONFIG_omero_web_public_password: "public"
-#      CONFIG_omero_web_public_server__id: "1"
-#      CONFIG_omero_web_public_url__filter: "^/(webgateway|webclient|webadmin/public|api)/"
-#      # Read-only mode for public users
-#      CONFIG_omero_web_public_cache__enabled: "true"
-#      CONFIG_omero_web_login__redirect: "/webclient/"
-#      CONFIG_omero_web_show__forgot__password: "false"
+      # Enable public user for login-free read access
+      CONFIG_omero_web_public_enabled: "true"
+      CONFIG_omero_web_public_user: "public"
+      CONFIG_omero_web_public_password: "public"
+      CONFIG_omero_web_public_server: "1"
+      # Allow access to webgateway, webclient, and iviewer without login
+      CONFIG_omero_web_public_url__filter: ".*"
     ports:
       - "4080:4080"
     networks:
