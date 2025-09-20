@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 """Set up OMERO for public read access through the web interface."""
 
+import logging
 import omero
 from omero.gateway import BlitzGateway
 from omero.model import ExperimenterI, ExperimenterGroupI, PermissionsI
 from omero.rtypes import rstring, rbool
 import sys
+
+# Suppress expected warnings from omero.gateway when looking up non-existent entities
+logging.getLogger("omero.gateway").setLevel(logging.ERROR)
 
 
 def setup_public_access(host="localhost", root_password="omero"):
@@ -32,14 +36,18 @@ def setup_public_access(host="localhost", root_password="omero"):
         # Create public group with world-readable permissions (rwrwrw)
         try:
             existing_group = admin.lookupGroup(public_group_name)
-            print(f"Group '{public_group_name}' already exists with ID: {existing_group.id.val}")
+            print(
+                f"Group '{public_group_name}' already exists with ID: {existing_group.id.val}"
+            )
             public_group = existing_group
         except omero.ApiUsageException:
             print(f"Creating public group '{public_group_name}'...")
             public_group = ExperimenterGroupI()
             public_group.name = rstring(public_group_name)
             public_group.ldap = rbool(False)
-            public_group.description = rstring("Public access group for login-free web viewing")
+            public_group.description = rstring(
+                "Public access group for login-free web viewing"
+            )
 
             # Set world-readable permissions (rwrwrw)
             perms = PermissionsI("rwrwrw")
@@ -53,11 +61,12 @@ def setup_public_access(host="localhost", root_password="omero"):
         public_user_exists = False
         try:
             existing_user = admin.lookupExperimenter(public_username)
-            print(f"User '{public_username}' already exists with ID: {existing_user.id.val}")
+            print(
+                f"User '{public_username}' already exists with ID: {existing_user.id.val}"
+            )
             public_user_exists = True
-            # Update password to ensure it matches
-            admin.changePasswordWithOldPassword(rstring(public_password), rstring(public_password))
-            print(f"Verified password for '{public_username}'")
+            # Note: Cannot verify/change password for existing user without knowing the old password
+            print(f"Using existing user '{public_username}'")
         except omero.ApiUsageException:
             print(f"Creating public user '{public_username}'...")
             public_user = ExperimenterI()
@@ -82,7 +91,9 @@ def setup_public_access(host="localhost", root_password="omero"):
 
         # Verify user can actually log in
         print(f"\nVerifying public user can authenticate...")
-        test_conn = BlitzGateway(public_username, public_password, host=host, port=4064, secure=True)
+        test_conn = BlitzGateway(
+            public_username, public_password, host=host, port=4064, secure=True
+        )
         if test_conn.connect():
             print(f"✓ Public user '{public_username}' can authenticate successfully")
             test_conn.close()
@@ -90,9 +101,9 @@ def setup_public_access(host="localhost", root_password="omero"):
             print(f"✗ WARNING: Public user '{public_username}' cannot authenticate!")
             print("  This may cause issues with public web access")
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("SUCCESS: Public Access Configured")
-        print("="*60)
+        print("=" * 60)
         print("\nThe public user has been created in OMERO server.")
         print("The compose.yaml already contains the necessary CONFIG_")
         print("environment variables for OMERO.web public access.")
@@ -108,6 +119,7 @@ def setup_public_access(host="localhost", root_password="omero"):
     except Exception as e:
         print(f"Error during setup: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
