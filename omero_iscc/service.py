@@ -6,6 +6,8 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, Optional
+import omero
+from omero.rtypes import rlong
 from omero.gateway import BlitzGateway, ImageWrapper, MapAnnotationWrapper
 from iscc_sum import IsccSumProcessor, IsccSumResult
 
@@ -212,34 +214,29 @@ def run():
     # Main loop
     while True:
         try:
-            # Get all images with ID greater than last_image_id
+            # Get images with ID greater than last_image_id using HQL
             images_processed = 0
-            new_images = 0
 
-            # Use a filter to get only images with ID > last_image_id
-            for image in conn.getObjects(
-                "Image", opts={"order": "id"}
-            ):
-                # Skip images we've already processed
-                if image.getId() <= last_image_id:
-                    continue
+            # Use HQL query to efficiently get only images with ID > last_image_id
+            query_service = conn.getQueryService()
+            hql_query = "SELECT i FROM Image i WHERE i.id > :minId ORDER BY i.id"
+            params = omero.sys.ParametersI()
+            params.addLong("minId", last_image_id)
+            params.page(0, 100)  # Limit to 100 images per iteration
 
-                new_images += 1
-                process_image(image)
-                images_processed += 1
+            images_raw = query_service.findAllByQuery(hql_query, params, conn.SERVICE_OPTS)
 
-                # Small batch limit to avoid memory issues
-                if images_processed >= 100:
-                    logger.info(
-                        f"Processed batch of {images_processed} images, cache size: {len(seen)}"
-                    )
-                    break
-
-            if new_images == 0:
+            if not images_raw:
                 logger.debug("No new images found")
             else:
+                # Wrap raw objects with ImageWrapper for easier access
+                for img_raw in images_raw:
+                    image = ImageWrapper(conn, img_raw)
+                    process_image(image)
+                    images_processed += 1
+
                 logger.info(
-                    f"Iteration complete: processed {images_processed} of {new_images} images, cache size: {len(seen)}"
+                    f"Iteration complete: processed {images_processed} images, cache size: {len(seen)}"
                 )
 
             # Wait before next iteration
