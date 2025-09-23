@@ -215,6 +215,7 @@ omero-data
 logs
 testdata
 dumpster
+iscc-data
 
 # AI
 .claude

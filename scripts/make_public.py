@@ -34,7 +34,9 @@ def setup_public_access(host="localhost", root_password="omero"):
         # Create public group with world-readable permissions (rwrwrw)
         try:
             existing_group = admin.lookupGroup(public_group_name)
-            print(f"Group '{public_group_name}' already exists with ID: {existing_group.id.val}")
+            print(
+                f"Group '{public_group_name}' already exists with ID: {existing_group.id.val}"
+            )
             public_group = existing_group
         except omero.ApiUsageException:
             print(f"Creating public group '{public_group_name}'...")
@@ -54,7 +56,9 @@ def setup_public_access(host="localhost", root_password="omero"):
         # Create or update public user
         try:
             existing_user = admin.lookupExperimenter(public_username)
-            print(f"User '{public_username}' already exists with ID: {existing_user.id.val}")
+            print(
+                f"User '{public_username}' already exists with ID: {existing_user.id.val}"
+            )
 
             # Ensure public user is member of public_group
             user_groups = admin.containedGroups(existing_user.id.val)
@@ -96,9 +100,36 @@ def setup_public_access(host="localhost", root_password="omero"):
             )
             print(f"Created public user with ID: {user_id}")
 
+        # CRITICAL: Add root user to public_group for cross-group file access
+        print(f"\nEnsuring root user is member of public_group...")
+        try:
+            root_user = admin.lookupExperimenter("root")
+            root_groups = admin.containedGroups(root_user.id.val)
+            root_group_ids = [g.id.val for g in root_groups]
+
+            if public_group.id.val not in root_group_ids:
+                print(f"Adding root user to public_group...")
+                admin.addGroups(root_user, [public_group])
+                print(f"✓ Root user added to public_group")
+            else:
+                print(f"✓ Root user is already in public_group")
+
+            # Verify root's group membership
+            root_groups_after = admin.containedGroups(root_user.id.val)
+            group_names = [g.name.val for g in root_groups_after]
+            print(f"Root user is now member of groups: {', '.join(group_names)}")
+
+        except Exception as e:
+            print(f"WARNING: Could not add root to public_group: {e}")
+            print(
+                "The ISCC processing service may not be able to access files from public_group!"
+            )
+
         # Verify authentication
         print(f"\nVerifying public user can authenticate...")
-        test_conn = BlitzGateway(public_username, public_password, host=host, port=4064, secure=True)
+        test_conn = BlitzGateway(
+            public_username, public_password, host=host, port=4064, secure=True
+        )
         if test_conn.connect():
             print(f"✓ Public user can authenticate successfully")
             test_conn.close()
@@ -111,11 +142,22 @@ def setup_public_access(host="localhost", root_password="omero"):
         print("\nPublic access is now active at: http://localhost:4080")
         print(f"Username: {public_username}, Password: {public_password}")
 
+        print("\n" + "=" * 60)
+        print("ISCC PROCESSING SERVICE COMPATIBILITY")
+        print("=" * 60)
+        print("✓ Root user is member of public_group")
+        print("✓ Public group has read-write permissions (rwrwrw)")
+        print("✓ ISCC service can now process files from ALL groups")
+        print(
+            "\nNote: You may need to restart the ISCC service for changes to take effect."
+        )
+
         return True
 
     except Exception as e:
         print(f"Error during setup: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

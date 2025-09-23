@@ -11,8 +11,7 @@ from iscc_sum import IsccSumProcessor, IsccSumResult
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -37,13 +36,15 @@ def load_state():
     state_file = Path(PERSIST_DIR) / "iscc_service_state.json"
     if state_file.exists():
         try:
-            with open(state_file, 'r') as f:
+            with open(state_file, "r") as f:
                 state = json.load(f)
                 offset = state.get("offset", 0)
                 # Reconstruct seen dict from JSON (simplified - just store ISCC string)
                 seen_data = state.get("seen", {})
                 # Note: We'll store simplified version, reconstruct IsccSumResult objects as needed
-                logger.info(f"Loaded state: offset={offset}, cached={len(seen_data)} hashes")
+                logger.info(
+                    f"Loaded state: offset={offset}, cached={len(seen_data)} hashes"
+                )
         except Exception as e:
             logger.warning(f"Failed to load state: {e}")
             offset = 0
@@ -62,18 +63,15 @@ def save_state():
         for hash_key, result in seen.items():
             seen_simple[hash_key] = {
                 "iscc": result.iscc,
-                "units": result.units if hasattr(result, 'units') else []
+                "units": result.units if hasattr(result, "units") else [],
             }
 
-        state = {
-            "offset": offset,
-            "seen": seen_simple
-        }
+        state = {"offset": offset, "seen": seen_simple}
 
         # Ensure directory exists
         state_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(state_file, 'w') as f:
+        with open(state_file, "w") as f:
             json.dump(state, f, indent=2)
         logger.debug(f"Saved state: offset={offset}, cached={len(seen)} hashes")
     except Exception as e:
@@ -91,7 +89,7 @@ def connect_omero() -> bool:
             passwd=OMERO_PWD,
             host=OMERO_HOST,
             port=4064,
-            secure=True
+            secure=True,
         )
 
         if not conn.connect():
@@ -99,7 +97,7 @@ def connect_omero() -> bool:
             return False
 
         # Set to cross-group querying
-        conn.SERVICE_OPTS.setOmeroGroup("-1")
+        # conn.SERVICE_OPTS.setOmeroGroup("-1")
 
         user = conn.getUser()
         logger.info(f"Connected as {user.getName()} (ID: {user.getId()})")
@@ -146,33 +144,25 @@ def process_image(image: ImageWrapper):
             result = seen[file_hash]
         else:
             # Generate ISCC from file data
-            logger.debug(f"Generating ISCC for {orig_file.getName()} ({orig_file.getSize()} bytes)")
+            logger.debug(
+                f"Generating ISCC for {orig_file.getName()} ({orig_file.getSize()} bytes)"
+            )
             hasher = IsccSumProcessor()
 
-            # Stream file in chunks
-            raw_store = None
-            try:
-                raw_store = conn.c.sf.createRawFileStore()
-                raw_store.setFileId(orig_file.getId())
+            # Stream file in chunks using simpler API
+            file_size = orig_file.getSize()
+            bytes_processed = 0
 
-                file_size = orig_file.getSize()
-                chunk_size = 1024 * 1024  # 1MB chunks
-                offset_bytes = 0
+            for chunk in orig_file.getFileInChunks():
+                hasher.update(chunk)
+                bytes_processed += len(chunk)
 
-                while offset_bytes < file_size:
-                    read_size = min(chunk_size, file_size - offset_bytes)
-                    data = raw_store.read(offset_bytes, read_size)
-                    hasher.update(data)
-                    offset_bytes += len(data)
-
-                    # Log progress for large files
-                    if file_size > 10 * 1024 * 1024 and offset_bytes % (10 * 1024 * 1024) == 0:
-                        progress = int((offset_bytes / file_size) * 100)
-                        logger.debug(f"Progress: {progress}%")
-
-            finally:
-                if raw_store:
-                    raw_store.close()
+                # Log progress for large files (every 10MB)
+                if file_size > 10 * 1024 * 1024 and bytes_processed % (
+                    10 * 1024 * 1024
+                ) < len(chunk):
+                    progress = int((bytes_processed / file_size) * 100)
+                    logger.debug(f"Progress: {progress}%")
 
             # Get result
             result = hasher.result(wide=True, add_units=True)
@@ -185,7 +175,7 @@ def process_image(image: ImageWrapper):
 
         # Store ISCC codes
         annotation_data = [["iscc:sum", result.iscc]]
-        if hasattr(result, 'units') and result.units:
+        if hasattr(result, "units") and result.units:
             if len(result.units) > 0:
                 annotation_data.append(["iscc:data", result.units[0]])
             if len(result.units) > 1:
@@ -237,7 +227,9 @@ def run():
             images_processed = 0
             new_images = 0
 
-            for image in conn.getObjects("Image", opts={"offset": offset, "order": "id"}):
+            for image in conn.getObjects(
+                "Image", opts={"offset": offset, "order": "id"}
+            ):
                 new_images += 1
                 process_image(image)
                 images_processed += 1
@@ -250,7 +242,9 @@ def run():
             if new_images == 0:
                 logger.debug("No new images found")
             else:
-                logger.info(f"Iteration complete: processed {images_processed} of {new_images} images")
+                logger.info(
+                    f"Iteration complete: processed {images_processed} of {new_images} images"
+                )
 
             # Wait before next iteration
             time.sleep(POLL_SECONDS)

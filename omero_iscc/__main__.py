@@ -1,6 +1,6 @@
 """OMERO ISCC Service entry point."""
 
-from .service_manager import main
+from .service import run
 
 if __name__ == "__main__":
-    main()
+    run()
