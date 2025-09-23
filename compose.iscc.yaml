@@ -1,0 +1,19 @@
+services:
+  iscc-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - omero-server
+    environment:
+      OMERO_ISCC_HOST: omero-server
+      OMERO_ISCC_USER: root
+      OMERO_ISCC_PASSWORD: omero
+      OMERO_ISCC_POLL_SECONDS: 5
+      OMERO_ISCC_PERSIST_DIR: /data
+    restart: unless-stopped
+    networks:
+      - omero-net
+    volumes:
+      - ./logs:/app/logs
+      - ./iscc-data:/data

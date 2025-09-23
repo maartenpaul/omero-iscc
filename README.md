@@ -8,6 +8,43 @@ This service monitors OMERO for newly imported images and automatically:
 - Generates ISCC-SUM fingerprints from the raw bioimaging data
 - Stores ISCCs as MapAnnotations on the images
 
+## Quick Start
+
+### Running All Services (Default)
+
+The simplest way to run all services:
+
+```bash
+# Start all services (OMERO + ISCC)
+docker compose up -d
+
+# Stop all services
+docker compose down
+```
+
+### Running Services Separately
+
+You can also run the services independently:
+
+```bash
+# Start only OMERO services
+docker compose -f compose.omero.yaml up -d
+
+# Start only ISCC service (requires OMERO network to exist)
+docker compose -f compose.omero.yaml up -d  # First ensure OMERO is running
+docker compose -f compose.iscc.yaml up -d   # Then start ISCC
+
+# Stop services individually
+docker compose -f compose.omero.yaml down
+docker compose -f compose.iscc.yaml down
+```
+
+### Service URLs
+
+- OMERO API/Insight: http://localhost:4064
+- OMERO Web: http://localhost:4080
+- Default credentials: username=root, password=omero
+
 ## Dependencies and related projects:
 
 Omero Server: https://github.com/ome/openmicroscopy / https://deepwiki.com/ome/openmicroscopy
