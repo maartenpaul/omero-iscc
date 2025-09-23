@@ -97,6 +97,23 @@ def create_compose_config(domain: str) -> str:
       caddy.reverse_proxy: "{{{{upstreams 4080}}}}"
     restart: unless-stopped
 
+  omero-iscc:
+    image: ghcr.io/bio-codes/omero-iscc:latest
+    depends_on:
+      - omero-server
+    environment:
+      OMERO_ISCC_HOST: omero-server
+      OMERO_ISCC_USER: root
+      OMERO_ISCC_PASSWORD: omero
+      OMERO_ISCC_POLL_SECONDS: 5
+      OMERO_ISCC_PERSIST_DIR: /data
+    networks:
+      - omero-internal
+    volumes:
+      - ./iscc-data:/data
+      - ./iscc-logs:/app/logs
+    restart: unless-stopped
+
 networks:
   caddy:
     external: true

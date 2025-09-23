@@ -28,39 +28,39 @@ conn: Optional[BlitzGateway] = None
 seen: Dict[
     str, IsccSumResult
 ] = {}  # file_hash -> IsccSumResult cache (memory only, not persisted)
-offset: int = 0  # Current image offset for iteration (persisted across restarts)
+last_image_id: int = 0  # Last processed image ID (persisted across restarts)
 
 
 def load_state():
-    """Load persisted state (offset only)."""
-    global offset
+    """Load persisted state (last_image_id only)."""
+    global last_image_id
 
     state_file = Path(PERSIST_DIR) / "iscc_service_state.json"
     if state_file.exists():
         try:
             with open(state_file, "r") as f:
                 state = json.load(f)
-                offset = state.get("offset", 0)
-                logger.info(f"Loaded state: offset={offset}")
+                last_image_id = state.get("last_image_id", 0)
+                logger.info(f"Loaded state: last_image_id={last_image_id}")
         except Exception as e:
             logger.warning(f"Failed to load state: {e}")
-            offset = 0
+            last_image_id = 0
     else:
-        offset = 0
+        last_image_id = 0
 
 
 def save_state():
-    """Persist current state (offset only)."""
+    """Persist current state (last_image_id only)."""
     state_file = Path(PERSIST_DIR) / "iscc_service_state.json"
     try:
-        state = {"offset": offset}
+        state = {"last_image_id": last_image_id}
 
         # Ensure directory exists
         state_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(state_file, "w") as f:
             json.dump(state, f, indent=2)
-        logger.debug(f"Saved state: offset={offset}")
+        logger.debug(f"Saved state: last_image_id={last_image_id}")
     except Exception as e:
         logger.error(f"Failed to save state: {e}")
 
@@ -97,7 +97,7 @@ def connect_omero() -> bool:
 
 def process_image(image: ImageWrapper):
     """Process a single image to generate and store ISCC."""
-    global seen, offset
+    global seen, last_image_id
 
     image_id = image.getId()
     image_name = image.getName()
@@ -109,7 +109,7 @@ def process_image(image: ImageWrapper):
         for ann in image.listAnnotations():
             if ann.getNs() == NAMESPACE:
                 logger.debug(f"Image {image_id} already has ISCC annotation, skipping")
-                offset = image_id
+                last_image_id = image_id
                 save_state()
                 return
 
@@ -117,7 +117,7 @@ def process_image(image: ImageWrapper):
         orig_files = list(image.getImportedImageFiles())
         if not orig_files:
             logger.warning(f"No original files for image {image_id}")
-            offset = image_id
+            last_image_id = image_id
             save_state()
             return
 
@@ -177,18 +177,18 @@ def process_image(image: ImageWrapper):
     except Exception as e:
         logger.error(f"Error processing image {image_id}: {e}", exc_info=True)
 
-    # Always update offset
-    offset = image_id
+    # Always update last_image_id
+    last_image_id = image_id
     save_state()
 
 
 def run():
     """Main service loop."""
-    global offset, seen
+    global last_image_id, seen
 
     logger.info("Starting OMERO ISCC Service")
 
-    # Load persisted state (offset only)
+    # Load persisted state (last_image_id only)
     load_state()
     # Initialize in-memory cache (not persisted)
     seen = {}
@@ -212,13 +212,18 @@ def run():
     # Main loop
     while True:
         try:
-            # Get images starting from offset
+            # Get all images with ID greater than last_image_id
             images_processed = 0
             new_images = 0
 
+            # Use a filter to get only images with ID > last_image_id
             for image in conn.getObjects(
-                "Image", opts={"offset": offset, "order": "id"}
+                "Image", opts={"order": "id"}
             ):
+                # Skip images we've already processed
+                if image.getId() <= last_image_id:
+                    continue
+
                 new_images += 1
                 process_image(image)
                 images_processed += 1
