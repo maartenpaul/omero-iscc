@@ -25,13 +25,15 @@ NAMESPACE = "org.iscc.omero.sum"
 
 # Global objects
 conn: Optional[BlitzGateway] = None
-seen: Dict[str, IsccSumResult] = {}  # file_hash -> IsccSumResult cache
-offset: int = 0  # Current image offset for iteration
+seen: Dict[
+    str, IsccSumResult
+] = {}  # file_hash -> IsccSumResult cache (memory only, not persisted)
+offset: int = 0  # Current image offset for iteration (persisted across restarts)
 
 
 def load_state():
-    """Load persisted state (offset and seen cache)."""
-    global offset, seen
+    """Load persisted state (offset only)."""
+    global offset
 
     state_file = Path(PERSIST_DIR) / "iscc_service_state.json"
     if state_file.exists():
@@ -39,41 +41,26 @@ def load_state():
             with open(state_file, "r") as f:
                 state = json.load(f)
                 offset = state.get("offset", 0)
-                # Reconstruct seen dict from JSON (simplified - just store ISCC string)
-                seen_data = state.get("seen", {})
-                # Note: We'll store simplified version, reconstruct IsccSumResult objects as needed
-                logger.info(
-                    f"Loaded state: offset={offset}, cached={len(seen_data)} hashes"
-                )
+                logger.info(f"Loaded state: offset={offset}")
         except Exception as e:
             logger.warning(f"Failed to load state: {e}")
             offset = 0
-            seen = {}
     else:
         offset = 0
-        seen = {}
 
 
 def save_state():
-    """Persist current state (offset and seen cache)."""
+    """Persist current state (offset only)."""
     state_file = Path(PERSIST_DIR) / "iscc_service_state.json"
     try:
-        # Simplify seen dict for JSON serialization
-        seen_simple = {}
-        for hash_key, result in seen.items():
-            seen_simple[hash_key] = {
-                "iscc": result.iscc,
-                "units": result.units if hasattr(result, "units") else [],
-            }
-
-        state = {"offset": offset, "seen": seen_simple}
+        state = {"offset": offset}
 
         # Ensure directory exists
         state_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(state_file, "w") as f:
             json.dump(state, f, indent=2)
-        logger.debug(f"Saved state: offset={offset}, cached={len(seen)} hashes")
+        logger.debug(f"Saved state: offset={offset}")
     except Exception as e:
         logger.error(f"Failed to save state: {e}")
 
@@ -138,7 +125,7 @@ def process_image(image: ImageWrapper):
         orig_file = orig_files[0]
         file_hash = orig_file.getHash()
 
-        # Check cache
+        # Check in-memory cache (reduces redundant processing within same session)
         if file_hash in seen:
             logger.info(f"Using cached ISCC for hash {file_hash}")
             result = seen[file_hash]
@@ -197,12 +184,14 @@ def process_image(image: ImageWrapper):
 
 def run():
     """Main service loop."""
-    global offset
+    global offset, seen
 
     logger.info("Starting OMERO ISCC Service")
 
-    # Load persisted state
+    # Load persisted state (offset only)
     load_state()
+    # Initialize in-memory cache (not persisted)
+    seen = {}
 
     # Connect with retries
     max_retries = 30
@@ -236,14 +225,16 @@ def run():
 
                 # Small batch limit to avoid memory issues
                 if images_processed >= 100:
-                    logger.info(f"Processed batch of {images_processed} images")
+                    logger.info(
+                        f"Processed batch of {images_processed} images, cache size: {len(seen)}"
+                    )
                     break
 
             if new_images == 0:
                 logger.debug("No new images found")
             else:
                 logger.info(
-                    f"Iteration complete: processed {images_processed} of {new_images} images"
+                    f"Iteration complete: processed {images_processed} of {new_images} images, cache size: {len(seen)}"
                 )
 
             # Wait before next iteration
