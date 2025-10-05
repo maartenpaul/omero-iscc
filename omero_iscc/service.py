@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Dict, Optional
 import omero
 from omero.gateway import BlitzGateway, ImageWrapper, MapAnnotationWrapper
-from iscc_sum import IsccSumProcessor, IsccSumResult
+from omero_iscc.biocode import biocode, declare
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -22,19 +22,23 @@ OMERO_USER = os.getenv("OMERO_ISCC_USER", "root")
 OMERO_PWD = os.getenv("OMERO_ISCC_PASSWORD", "omero")
 POLL_SECONDS = int(os.getenv("OMERO_ISCC_POLL_SECONDS", "5"))
 PERSIST_DIR = os.getenv("OMERO_ISCC_PERSIST_DIR", "/data")
-NAMESPACE = "org.iscc.omero.sum"
+RESET_STATE = os.getenv("OMERO_ISCC_RESET_STATE", "false").lower() == "true"
+NAMESPACE = "org.iscc.omero"
 
 # Global objects
 conn: Optional[BlitzGateway] = None
-seen: Dict[
-    str, IsccSumResult
-] = {}  # file_hash -> IsccSumResult cache (memory only, not persisted)
+seen: Dict[str, dict] = {}  # image_id -> iscc_note cache (memory only, not persisted)
 last_image_id: int = 0  # Last processed image ID (persisted across restarts)
 
 
 def load_state():
     """Load persisted state (last_image_id only)."""
     global last_image_id
+
+    if RESET_STATE:
+        logger.info("RESET_STATE is true, starting from image ID 0")
+        last_image_id = 0
+        return
 
     state_file = Path(PERSIST_DIR) / "iscc_service_state.json"
     if state_file.exists():
@@ -84,11 +88,15 @@ def connect_omero() -> bool:
             logger.error("Failed to connect to OMERO")
             return False
 
-        # Set to cross-group querying
-        # conn.SERVICE_OPTS.setOmeroGroup("-1")
+        # Set to cross-group querying to see images across all groups
+        conn.SERVICE_OPTS.setOmeroGroup(-1)
 
         user = conn.getUser()
+        current_group = conn.getGroupFromContext()
         logger.info(f"Connected as {user.getName()} (ID: {user.getId()})")
+        logger.info(
+            f"Working in group: {current_group.getName() if current_group else 'All groups'} (ID: {current_group.getId() if current_group else -1})"
+        )
         return True
 
     except Exception as e:
@@ -114,64 +122,44 @@ def process_image(image: ImageWrapper):
                 save_state()
                 return
 
-        # Get original files
-        orig_files = list(image.getImportedImageFiles())
-        if not orig_files:
-            logger.warning(f"No original files for image {image_id}")
-            last_image_id = image_id
-            save_state()
-            return
-
-        # Process first original file
-        orig_file = orig_files[0]
-        file_hash = orig_file.getHash()
-
         # Check in-memory cache (reduces redundant processing within same session)
-        if file_hash in seen:
-            logger.info(f"Using cached ISCC for hash {file_hash}")
-            result = seen[file_hash]
+        if image_id in seen:
+            logger.info(f"Using cached ISCC for image {image_id}")
+            iscc_note = seen[image_id]
         else:
-            # Generate ISCC from file data
-            logger.debug(
-                f"Generating ISCC for {orig_file.getName()} ({orig_file.getSize()} bytes)"
-            )
-            hasher = IsccSumProcessor()
+            # Generate ISCC biocode from image planes
+            logger.debug(f"Generating ISCC biocode for image {image_id}")
 
-            # Stream file in chunks using simpler API
-            file_size = orig_file.getSize()
-            bytes_processed = 0
+            # Get fresh image object with loaded pixels data
+            image_with_pixels = conn.getObject("Image", image_id)
 
-            for chunk in orig_file.getFileInChunks():
-                hasher.update(chunk)
-                bytes_processed += len(chunk)
+            iscc_note = biocode(conn, image_with_pixels)
+            seen[image_id] = iscc_note
+            logger.info(f"Generated ISCC-CODE: {iscc_note['iscc_code']}")
 
-                # Log progress for large files (every 10MB)
-                if file_size > 10 * 1024 * 1024 and bytes_processed % (
-                    10 * 1024 * 1024
-                ) < len(chunk):
-                    progress = int((bytes_processed / file_size) * 100)
-                    logger.debug(f"Progress: {progress}%")
+        # Declare to ISCC-HUB and get ISCC-ID
+        iscc_id = declare(iscc_note, image_id)
 
-            # Get result
-            result = hasher.result(wide=True, add_units=True)
-            seen[file_hash] = result
-            logger.info(f"Generated ISCC: {result.iscc}")
+        # Switch to the image's group for saving annotation
+        group_id = image.getDetails().getGroup().getId()
+        conn.SERVICE_OPTS.setOmeroGroup(group_id)
 
         # Store as annotation
         map_ann = MapAnnotationWrapper(conn)
         map_ann.setNs(NAMESPACE)
 
-        # Store ISCC codes
-        annotation_data = [["iscc:sum", result.iscc]]
-        if hasattr(result, "units") and result.units:
-            if len(result.units) > 0:
-                annotation_data.append(["iscc:data", result.units[0]])
-            if len(result.units) > 1:
-                annotation_data.append(["iscc:inst", result.units[1]])
+        # Store ISCC-CODE and ISCC-ID
+        annotation_data = [["ISCC-CODE", iscc_note["iscc_code"]]]
+        if iscc_id:
+            annotation_data.append(["ISCC-ID", iscc_id])
+            logger.info(f"Received ISCC-ID: {iscc_id}")
 
         map_ann.setValue(annotation_data)
         map_ann.save()
         image.linkAnnotation(map_ann)
+
+        # Switch back to all groups for next query
+        conn.SERVICE_OPTS.setOmeroGroup(-1)
 
         logger.info(f"Stored ISCC annotation for image {image_id}")
 
@@ -216,6 +204,8 @@ def run():
             # Get images with ID greater than last_image_id using HQL
             images_processed = 0
 
+            logger.debug(f"Querying for images with ID > {last_image_id}")
+
             # Use HQL query to efficiently get only images with ID > last_image_id
             query_service = conn.getQueryService()
             hql_query = "SELECT i FROM Image i WHERE i.id > :minId ORDER BY i.id"
@@ -223,12 +213,36 @@ def run():
             params.addLong("minId", last_image_id)
             params.page(0, 100)  # Limit to 100 images per iteration
 
+            logger.debug(f"Executing HQL query: {hql_query}")
+
             images_raw = query_service.findAllByQuery(
                 hql_query, params, conn.SERVICE_OPTS
             )
 
+            logger.debug(
+                f"Query returned {len(images_raw) if images_raw else 0} images"
+            )
+
             if not images_raw:
-                logger.debug("No new images found")
+                logger.debug(f"No new images found with ID > {last_image_id}")
+
+                # In debug mode, also check total image count and list all IDs
+                if logger.isEnabledFor(logging.DEBUG):
+                    count_query = "SELECT COUNT(i) FROM Image i"
+                    count_result = query_service.projection(
+                        count_query, None, conn.SERVICE_OPTS
+                    )
+                    total_images = count_result[0][0].val if count_result else 0
+                    logger.debug(f"Total images in database: {total_images}")
+
+                    # List all image IDs for debugging
+                    id_query = "SELECT i.id FROM Image i ORDER BY i.id"
+                    id_result = query_service.projection(
+                        id_query, None, conn.SERVICE_OPTS
+                    )
+                    if id_result:
+                        image_ids = [r[0].val for r in id_result]
+                        logger.debug(f"All image IDs in database: {image_ids}")
             else:
                 # Wrap raw objects with ImageWrapper for easier access
                 for img_raw in images_raw:
