@@ -57,16 +57,16 @@ def declare(iscc_note, image_id):
 
     hub_id = os.getenv("ISCC_HUB_ID", None)
     hub_url = os.getenv("ISCC_HUB_URL", None)
-    omero_host = os.getenv("OMERO_ISCC_HOST", None)
-    if not all([hub_id, hub_url, omero_host]):
+    omero_host_url = os.getenv("OMERO_HOST_PUBLIC_URL", None)
+    if not all([hub_id, hub_url, omero_host_url]):
         logger.info(
-            "OMERO_ISCC_HOST, ISCC_HUB_ID, ISCC_HUB_URL must be set to declare ISCC."
+            "OMERO_HOST_PUBLIC_URL, ISCC_HUB_ID, ISCC_HUB_URL must be set to declare ISCC."
         )
         return
 
     iscc_note["nonce"] = icr.create_nonce(int(os.getenv("ISCC_HUB_ID", 0)))
     iscc_note["timestamp"] = timestamp()
-    iscc_note["gateway"] = f"https://{omero_host}/webclient/?show=image-{image_id}"
+    iscc_note["gateway"] = f"{omero_host_url}/webclient/?show=image-{image_id}"
     signed_note = icr.sign_json(iscc_note, keypair)
     endpoint = hub_url.removesuffix("/") + "/declaration"
     try:

@@ -17,7 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
-OMERO_HOST = os.getenv("OMERO_ISCC_HOST", "localhost")
+OMERO_HOST = os.getenv("OMERO_HOST_INTERNAL", "localhost")
 OMERO_USER = os.getenv("OMERO_ISCC_USER", "root")
 OMERO_PWD = os.getenv("OMERO_ISCC_PASSWORD", "omero")
 POLL_SECONDS = int(os.getenv("OMERO_ISCC_POLL_SECONDS", "5"))

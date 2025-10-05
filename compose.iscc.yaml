@@ -6,7 +6,8 @@ services:
     depends_on:
       - omero-server
     environment:
-      OMERO_ISCC_HOST: omero-server
+      OMERO_HOST_INTERNAL: omero-server
+      OMERO_HOST_PUBLIC_URL: "http://localhost:4080"
       OMERO_ISCC_USER: root
       OMERO_ISCC_PASSWORD: omero
       OMERO_ISCC_POLL_SECONDS: 5
