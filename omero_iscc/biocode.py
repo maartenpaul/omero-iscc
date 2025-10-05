@@ -13,11 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 def biocode(conn, image_obj):
-    """Generate ISCC biocode for an image.
+    # type: (BlitzGateway, ImageWrapper | object) -> dict
+    """
+    Generate ISCC biocode for an OMERO image.
 
-    Args:
-        conn: BlitzGateway connection
-        image_obj: Can be either an ImageWrapper or raw image object
+    Processes all planes of the image sequentially, generating a wide ISCC
+    code with datahash and unit identifiers.
+
+    :param conn: Active BlitzGateway connection to OMERO server
+    :param image_obj: OMERO image (ImageWrapper or raw image object)
+    :return: Dictionary with 'iscc_code', 'datahash', and 'units' keys
     """
     hasher = IsccSumProcessor()
     for plane in iter_planes_blitz_image(conn, image_obj):
@@ -31,8 +36,19 @@ def biocode(conn, image_obj):
     return iscc_note
 
 
-def declare(iscc_note: dict, image_id: int) -> str | None:
-    """Submit ISCC declaration to ISCC-HUB and return ISCC-ID if successful."""
+def declare(iscc_note, image_id):
+    # type: (dict, int) -> str | None
+    """
+    Submit ISCC declaration to ISCC-HUB and return ISCC-ID.
+
+    Adds nonce, timestamp, and gateway URL to the ISCC note, signs it with
+    the keypair from environment, and submits to ISCC-HUB. Handles both new
+    declarations (200) and existing declarations (409).
+
+    :param iscc_note: Dictionary with 'iscc_code', 'datahash', and 'units'
+    :param image_id: OMERO image ID for gateway URL construction
+    :return: ISCC-ID string if successful, None if configuration missing or request fails
+    """
     try:
         keypair = icr.key_from_env()
     except Exception as e:
@@ -78,20 +94,26 @@ def declare(iscc_note: dict, image_id: int) -> str | None:
 
 
 def timestamp():
-    """Create RFC 3339 formatted timestamp in UTC with millisecond precision."""
+    # type: () -> str
+    """
+    Create RFC 3339 formatted timestamp in UTC with millisecond precision.
+
+    :return: ISO 8601 timestamp string (e.g., '2025-10-05T14:23:45.123Z')
+    """
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
-def plane_to_bytes(plane: Plane) -> bytes:
-    """Convert a 2D plane to canonical byte representation.
+def plane_to_bytes(plane):
+    # type: (Plane) -> bytes
+    """
+    Convert a 2D plane to canonical big-endian byte representation.
 
-    Uses big-endian byte order for compatibility with OMERO.
+    Flattens the plane in C-order (row-major: Y then X) and converts to
+    big-endian bytes for compatibility with OMERO and ISCC processing.
 
-    Args:
-        plane: 2D NumPy array representing a single plane
-
-    Returns:
-        Bytes in big-endian format
+    :param plane: Plane object with xy_array attribute (2D NumPy array)
+    :return: Big-endian bytes of flattened plane data
+    :raises ValueError: If plane is not 2D
     """
     if plane.xy_array.ndim != 2:
         raise ValueError(f"Expected 2D plane, got {plane.ndim}D")
