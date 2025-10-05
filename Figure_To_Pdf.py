@@ -21,6 +21,9 @@ import logging
 import json
 import numpy
 import html
+import tempfile
+import subprocess
+import iscc_core
 
 from datetime import datetime
 import os
@@ -929,6 +932,13 @@ class FigureExport(object):
         # get Figure width & height...
         self.page_width = self.figure_json['paper_width']
         self.page_height = self.figure_json['paper_height']
+        
+        # ISCC data structure
+        self.iscc_data = {
+            'panels': [],           # List of ISCC codes for each panel
+            'figure_metadata': {},  # Metadata for the entire figure
+            'combined_iscc': None   # Final combined ISCC code for the figure
+        }
 
     def _fix_figure_json(self, figure_json):
         """Ensure that the figure JSON is proper.
@@ -1113,6 +1123,16 @@ class FigureExport(object):
         return self.create_file_annotation(image_ids)
 
     def create_file_annotation(self, image_ids):
+        """
+        Modified to generate and save ISCC codes before creating file annotation.
+        """
+        # Generate figure-level ISCC
+        self.generate_figure_iscc()
+        
+        # Save ISCC codes to file
+        self.save_iscc_to_file()
+        
+        # Original code continues below:
         output_file = self.figure_file_name
         ns = self.ns
         mimetype = self.mimetype
@@ -1147,6 +1167,451 @@ class FigureExport(object):
                              % (file_ann, image_ids))
 
         return file_ann
+
+    def get_image_iscc_annotation(self, image_id):
+        """
+        Retrieve ISCC annotation from an OMERO image.
+        
+        Args:
+            image_id: OMERO image ID
+        
+        Returns:
+            Dictionary with ISCC codes or None if not found
+        """
+        try:
+            image = self.conn.getObject("Image", image_id)
+            if not image:
+                logger.warning(f"Image {image_id} not found")
+                return None
+            
+            # Search for ISCC annotation with namespace org.iscc.omero.sum
+            for ann in image.listAnnotations():
+                if hasattr(ann, 'getNs') and ann.getNs() == "org.iscc.omero.sum":
+                    # Get key-value pairs from MapAnnotation
+                    if hasattr(ann, 'getValue'):
+                        kv_pairs = ann.getValue()
+                        iscc_data = {}
+                        for key, value in kv_pairs:
+                            iscc_data[key] = value
+                        
+                        logger.info(f"Found ISCC annotation for image {image_id}: {iscc_data}")
+                        return iscc_data
+            
+            logger.debug(f"No ISCC annotation found for image {image_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error retrieving ISCC annotation for image {image_id}: {str(e)}")
+            return None
+
+    def generate_panel_iscc(self, pil_img, panel, panel_index):
+        """
+        Generate ISCC-SUM for a single panel image using CLI.
+        
+        Args:
+            pil_img: PIL Image object of the panel
+            panel: Panel dictionary with metadata
+            panel_index: Index of the panel in the figure
+        
+        Returns:
+            Dictionary with ISCC codes and metadata
+        """
+        try:
+            # Save PIL image to temporary file
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+                tmp_filename = tmp_file.name
+                pil_img.save(tmp_filename, format='PNG')
+            
+            try:
+                # Call iscc-sum CLI with --units flag to get component codes
+                result = subprocess.run(
+                    ['iscc-sum', '--units', tmp_filename],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                
+                # Parse text output
+                # Format:
+                # ISCC:K4A... *filename
+                #   ISCC:GAD... 
+                #   ISCC:IAD... 
+                lines = result.stdout.strip().split('\n')
+                
+                if len(lines) < 3:
+                    logger.error(f"Unexpected iscc-sum output for panel {panel_index}")
+                    return None
+                
+                # Parse main ISCC code from first line
+                main_line = lines[0].split(' *')[0].strip()
+                iscc_code = main_line.replace('ISCC:', '')
+                
+                # Parse Data-Code from second line (starts with spaces)
+                data_line = lines[1].strip()
+                data_code = data_line.split()[0].replace('ISCC:', '')
+                
+                # Parse Instance-Code from third line (starts with spaces)
+                instance_line = lines[2].strip()
+                instance_code = instance_line.split()[0].replace('ISCC:', '')
+                
+                # Get file size
+                filesize = os.path.getsize(tmp_filename)
+                
+                # Note: datahash not available from CLI, will be set later
+                datahash = None
+                
+                # Generate ISCC Image-Code for perceptual similarity
+                image_code = None
+                try:
+                    # Normalize image for Image-Code generation
+                    # 1. Convert to grayscale
+                    img_gray = pil_img.convert('L')
+                    # 2. Resize to 32x32
+                    img_normalized = img_gray.resize((32, 32), Image.LANCZOS)
+                    # 3. Flatten to array of pixel values
+                    pixels = list(img_normalized.getdata())
+                    
+                    # Generate Image-Code using iscc_core
+                    image_code_obj = iscc_core.gen_image_code(pixels, bits=256)
+                    image_code = image_code_obj['iscc']
+                    logger.debug(f"Generated Image-Code for panel {panel_index}: {image_code}")
+                except Exception as e:
+                    logger.warning(f"Could not generate Image-Code for panel {panel_index}: {str(e)}")
+                
+                # Prepare metadata
+                panel_name = panel.get('name', f'Panel_{panel_index}')
+                metadata = {
+                    'panel_index': panel_index,
+                    'image_id': panel.get('imageId'),
+                    'image_name': panel.get('name'),
+                    'width': panel.get('width'),
+                    'height': panel.get('height'),
+                    'x': panel.get('x'),
+                    'y': panel.get('y'),
+                    'zoom': panel.get('zoom'),
+                    'theZ': panel.get('theZ'),
+                    'theT': panel.get('theT'),
+                    'channels': [ch['label'] for ch in panel.get('channels', []) if ch.get('active')],
+                }
+                
+                # Add optional metadata if present
+                if panel.get('datasetName'):
+                    metadata['dataset_name'] = panel['datasetName']
+                if panel.get('datasetId'):
+                    metadata['dataset_id'] = panel['datasetId']
+                
+                # Retrieve original ISCC-SUM from OMERO image
+                image_id = panel.get('imageId')
+                original_iscc = None
+                panel_iscc_code = None
+                
+                if image_id:
+                    original_iscc = self.get_image_iscc_annotation(image_id)
+                    if original_iscc:
+                        logger.info(f"Retrieved original ISCC for image {image_id}")
+                
+                # Generate Meta-Code for THIS PANEL with backlink to original image
+                try:
+                    # Get OMERO server host and construct URL
+                    omero_host = self.conn.host
+                    omero_url = f"https://{omero_host}/webclient/?show=image-{image_id}"
+                    
+                    # Create backlink metadata with detailed rendering info
+                    # Build channel info with contrast settings
+                    channel_info = []
+                    for ch in panel.get('channels', []):
+                        if ch.get('active'):
+                            ch_data = {
+                                'label': ch.get('label'),
+                                'color': ch.get('color')
+                            }
+                            # Add window (contrast) settings if available
+                            if 'window' in ch:
+                                ch_data['window'] = {
+                                    'start': ch['window'].get('start'),
+                                    'end': ch['window'].get('end')
+                                }
+                            channel_info.append(ch_data)
+                    
+                    backlink_meta = {
+                        'omero_server': omero_host,
+                        'omero_image_id': image_id,
+                        'omero_url': omero_url,
+                        'rendering': {
+                            'zoom': panel.get('zoom'),
+                            'theZ': panel.get('theZ'),
+                            'theT': panel.get('theT'),
+                            'channels': channel_info
+                        }
+                    }
+                    
+                    # Add Z-projection information if present
+                    if panel.get('z_projection'):
+                        backlink_meta['rendering']['z_projection'] = {
+                            'enabled': True,
+                            'z_start': panel.get('z_start'),
+                            'z_end': panel.get('z_end'),
+                            'method': 'intmax'  # Maximum intensity projection
+                        }
+                    
+                    # Add crop/viewport information
+                    if panel.get('dx') is not None and panel.get('dy') is not None:
+                        backlink_meta['viewport'] = {
+                            'x': panel.get('x', 0),
+                            'y': panel.get('y', 0),
+                            'width': panel.get('width'),
+                            'height': panel.get('height'),
+                            'dx': panel.get('dx'),
+                            'dy': panel.get('dy')
+                        }
+                    
+                    # Add backlink to original image ISCC if available
+                    if original_iscc and 'iscc:sum' in original_iscc:
+                        backlink_meta['part_of'] = original_iscc['iscc:sum']
+                    
+                    # Generate Meta-Code for the panel (as rendered)
+                    panel_meta_obj = iscc_core.gen_meta_code(
+                        panel_name,
+                        meta=backlink_meta,
+                        bits=256
+                    )
+                    
+                    # Create combined ISCC-CODE for the panel
+                    # Meta-Code + Image-Code + Data-Code + Instance-Code
+                    panel_iscc_units = [
+                        panel_meta_obj['iscc']
+                    ]
+                    
+                    # Add Image-Code if available (perceptual similarity)
+                    if image_code:
+                        panel_iscc_units.append(image_code)
+                    
+                    # Add Data-Code and Instance-Code
+                    panel_iscc_units.extend([
+                        f'ISCC:{data_code}',
+                        f'ISCC:{instance_code}'
+                    ])
+                    
+                    panel_iscc_obj = iscc_core.gen_iscc_code(panel_iscc_units)
+                    panel_iscc_code = {
+                        'iscc': panel_iscc_obj['iscc'],
+                        'units': panel_iscc_units,
+                        'meta': panel_meta_obj.get('meta'),
+                        'metahash': panel_meta_obj.get('metahash'),
+                        'datahash': datahash
+                    }
+                    
+                    # Add Image-Code separately for reference
+                    if image_code:
+                        panel_iscc_code['image_code'] = image_code
+                    
+                    logger.info(f"Generated ISCC-CODE for panel {panel_index}: {panel_iscc_code['iscc']}")
+                    
+                except Exception as e:
+                    logger.warning(f"Could not generate ISCC-CODE for panel {panel_index}: {str(e)}")
+                
+                # Build panel ISCC result
+                panel_iscc = {
+                    'name': panel_name,
+                    'iscc_sum': f'ISCC:{iscc_code}',
+                    'data_code': f'ISCC:{data_code}',
+                    'instance_code': f'ISCC:{instance_code}',
+                    'datahash': datahash,
+                    'filesize': filesize,
+                    'metadata': metadata
+                }
+                
+                # Add the combined ISCC-CODE if generated
+                if panel_iscc_code:
+                    panel_iscc['iscc'] = panel_iscc_code['iscc']
+                    panel_iscc['units'] = panel_iscc_code['units']
+                    panel_iscc['meta'] = panel_iscc_code.get('meta')
+                    panel_iscc['metahash'] = panel_iscc_code.get('metahash')
+                else:
+                    # Fallback to just the sum
+                    panel_iscc['iscc'] = f'ISCC:{iscc_code}'
+                
+                # Add original ISCC annotation for reference
+                if original_iscc:
+                    panel_iscc['original_iscc'] = original_iscc
+                
+                return panel_iscc
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(tmp_filename):
+                    os.unlink(tmp_filename)
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running iscc-sum for panel {panel_index}: {e.stderr}")
+            return None
+        except Exception as e:
+            logger.error(f"Error generating ISCC for panel {panel_index}: {str(e)}")
+            return None
+
+    def generate_figure_iscc(self):
+        """
+        Store figure metadata.
+        The primary ISCC codes are the ones for the original OMERO images.
+        
+        Returns:
+            Dictionary with figure metadata
+        """
+        try:
+            figure_title = self.figure_name
+            
+            # Collect original image ISCC codes
+            original_iscc_codes = []
+            for p in self.iscc_data['panels']:
+                if p and 'original_image_iscc' in p:
+                    original_iscc_codes.append(p['original_image_iscc']['iscc'])
+            
+            # Prepare figure metadata
+            figure_meta = {
+                'figure_name': figure_title,
+                'page_count': self.page_count,
+                'page_width': self.page_width,
+                'page_height': self.page_height,
+                'export_option': self.script_params.get('Export_Option'),
+                'panel_count': len(self.iscc_data['panels']),
+                'original_image_iscc_codes': original_iscc_codes
+            }
+
+            figure_iscc = {
+                'name': figure_title,
+                'metadata': figure_meta
+            }
+            
+            # Store in iscc_data
+            self.iscc_data['figure_metadata'] = figure_meta
+            self.iscc_data['combined_iscc'] = figure_iscc
+            
+            return figure_iscc
+            
+        except Exception as e:
+            logger.error(f"Error generating figure ISCC: {str(e)}")
+            return None
+
+    def save_iscc_to_file(self):
+        """
+        Save all ISCC codes to a text file.
+        This file will be included in the zip or saved alongside the PDF.
+        """
+        try:
+            # Determine output filename
+            iscc_filename = "ISCC_codes.txt"
+            if self.zip_folder_name is not None:
+                iscc_filename = os.path.join(self.zip_folder_name, iscc_filename)
+            
+            with open(iscc_filename, 'w', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write("ISCC CODES FOR OMERO.FIGURE EXPORT\n")
+                f.write("Generated using iscc-sum CLI\n")
+                f.write("=" * 80 + "\n\n")
+                
+                # Write figure-level info
+                if self.iscc_data['combined_iscc']:
+                    f.write("FIGURE:\n")
+                    f.write("-" * 80 + "\n")
+                    figure_iscc = self.iscc_data['combined_iscc']
+                    f.write(f"Name: {figure_iscc['name']}\n")
+                    f.write(f"Panels: {figure_iscc['metadata'].get('panel_count', 0)}\n\n")
+                
+                # Write panel-level ISCCs
+                f.write("=" * 80 + "\n")
+                f.write(f"PANEL ISCC CODES ({len(self.iscc_data['panels'])} panels):\n")
+                f.write("=" * 80 + "\n\n")
+                
+                for idx, panel_iscc in enumerate(self.iscc_data['panels']):
+                    if panel_iscc is None:
+                        f.write(f"Panel {idx}: ISCC generation failed\n\n")
+                        continue
+                    
+                    f.write(f"PANEL {idx}:\n")
+                    f.write("-" * 80 + "\n")
+                    f.write(f"Name: {panel_iscc['name']}\n")
+                    f.write(f"Size: {panel_iscc['filesize']} bytes\n\n")
+                    
+                    # Write PANEL ISCC-CODE
+                    if 'units' in panel_iscc:
+                        f.write("ISCC-CODE:\n")
+                        f.write(f"  {panel_iscc['iscc']}\n\n")
+                        
+                        f.write("Components:\n")
+                        
+                        # Determine component order based on presence of Image-Code
+                        has_image_code = 'image_code' in panel_iscc
+                        num_units = len(panel_iscc['units'])
+                        
+                        for i, unit in enumerate(panel_iscc['units']):
+                            if i == 0:
+                                f.write(f"  Meta-Code:     {unit}\n")
+                            elif has_image_code and i == 1:
+                                f.write(f"  Image-Code:    {unit}\n")
+                            elif (has_image_code and i == 2) or (not has_image_code and i == 1):
+                                f.write(f"  Data-Code:     {unit}\n")
+                            else:
+                                f.write(f"  Instance-Code: {unit}\n")
+                        
+                        if 'datahash' in panel_iscc and panel_iscc['datahash']:
+                            f.write(f"  DataHash:      {panel_iscc['datahash']}\n")
+                        f.write("\n")
+                    else:
+                        f.write(f"ISCC-SUM: {panel_iscc['iscc']}\n\n")
+                    
+                    # Show metadata embedded in Meta-Code
+                    if 'meta' in panel_iscc:
+                        f.write("Meta-Code Metadata:\n")
+                        # Decode the base64 meta field if present
+                        try:
+                            import base64
+                            meta_str = panel_iscc['meta']
+                            if meta_str.startswith('data:application/json;base64,'):
+                                b64_data = meta_str.split(',')[1]
+                                decoded = base64.b64decode(b64_data).decode('utf-8')
+                                meta_obj = json.loads(decoded)
+                                f.write(json.dumps(meta_obj, indent=2))
+                                f.write("\n\n")
+                        except Exception as e:
+                            logger.debug(f"Could not decode meta: {e}")
+                            f.write("  (base64 encoded)\n\n")
+                    
+                    # Write original ISCC reference
+                    if 'original_iscc' in panel_iscc:
+                        f.write("Original OMERO Image ISCC:\n")
+                        orig_iscc = panel_iscc['original_iscc']
+                        for key, value in orig_iscc.items():
+                            f.write(f"  {key}: {value}\n")
+                        f.write("\n")
+                
+                f.write("=" * 80 + "\n")
+                f.write("NOTES:\n")
+                f.write("=" * 80 + "\n\n")
+                f.write("ISCC-CODE Structure:\n")
+                f.write("  Meta-Code:     Metadata with backlink to original\n")
+                f.write("  Image-Code:    Perceptual image similarity hash\n")
+                f.write("  Data-Code:     Content-based similarity hash\n")
+                f.write("  Instance-Code: Exact file hash\n")
+                f.write("  DataHash:      Cryptographic verification\n\n")
+                f.write("Meta-Code Contents:\n")
+                f.write("  - Backlink to original image ISCC (part_of)\n")
+                f.write("  - OMERO server URL and image ID\n")
+                f.write("  - Rendering settings (contrast, channels, zoom, etc)\n")
+                f.write("  - Z-projection info (if applicable)\n\n")
+                f.write("Image-Code:\n")
+                f.write("  - Perceptual hash of panel appearance\n")
+                f.write("  - Finds visually similar images\n")
+                f.write("  - Robust to minor changes\n\n")
+                f.write("For signing/timestamping: https://sb0.iscc.id\n")
+                f.write("For similarity checking: iscc-sum --similar <files>\n")
+                f.write("=" * 80 + "\n")
+            
+            logger.info(f"ISCC codes saved to {iscc_filename}")
+            return iscc_filename
+            
+        except Exception as e:
+            logger.error(f"Error saving ISCC codes to file: {str(e)}")
+            return None
 
     def apply_rdefs(self, image, channels):
         """ Apply the channel levels and colors to the image """
@@ -2170,6 +2635,7 @@ class FigureExport(object):
         """
         Gets the image from OMERO, processes (and saves) it then
         calls self.paste_image() to add it to PDF or TIFF figure.
+        NOW ALSO GENERATES ISCC CODES FOR EACH PANEL.
         """
         image_id = panel['imageId']
         channels = panel['channels']
@@ -2196,6 +2662,11 @@ class FigureExport(object):
             if image._re is not None:
                 image._re.close()
 
+        # Generate ISCC for this panel
+        if pil_img is not None:
+            panel_iscc = self.generate_panel_iscc(pil_img, panel, idx)
+            self.iscc_data['panels'].append(panel_iscc)
+        
         # for PDF export, we might have a target dpi
         dpi = panel.get('min_export_dpi', None)
 
