@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 def biocode(conn, image_obj):
+    """Generate ISCC biocode for an image.
+
+    Args:
+        conn: BlitzGateway connection
+        image_obj: Can be either an ImageWrapper or raw image object
+    """
     hasher = IsccSumProcessor()
     for plane in iter_planes_blitz_image(conn, image_obj):
         hasher.update(plane_to_bytes(plane))
