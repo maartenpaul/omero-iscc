@@ -14,7 +14,10 @@ RUN pip install --no-cache-dir \
 # Install other dependencies
 RUN pip install --no-cache-dir \
     iscc-sum>=0.1.0 \
-    omero-py>=5.21.1
+    iscc-crypto>=0.3.0 \
+    omero-py>=5.21.1 \
+    requests>=2.31.0 \
+    numpy>=1.24.0
 
 COPY omero_iscc/ ./omero_iscc/
 
