@@ -50,7 +50,7 @@ def update_deployment(
         run_remote_command(
             ssh,
             "cp /opt/omero/compose.yaml /opt/omero/compose.yaml.backup",
-            check=False
+            check=False,
         )
 
         # Update Docker Compose configuration
@@ -66,16 +66,12 @@ def update_deployment(
 
         # Pull the omero-iscc image
         print("🐳 Pulling omero-iscc image...")
-        run_remote_command(
-            ssh,
-            "docker pull ghcr.io/bio-codes/omero-iscc:latest"
-        )
+        run_remote_command(ssh, "docker pull ghcr.io/bio-codes/omero-iscc:latest")
 
         # Apply the update without downtime
         print("🔄 Applying update to services...")
         run_remote_command(
-            ssh,
-            "cd /opt/omero && docker compose up -d --remove-orphans"
+            ssh, "cd /opt/omero && docker compose up -d --remove-orphans"
         )
 
         # Wait for services to stabilize
@@ -84,10 +80,7 @@ def update_deployment(
 
         # Check service status
         print("📊 Checking service status...")
-        out, _, _ = run_remote_command(
-            ssh,
-            "cd /opt/omero && docker compose ps"
-        )
+        out, _, _ = run_remote_command(ssh, "cd /opt/omero && docker compose ps")
         print(out)
 
         # Check omero-iscc logs
@@ -95,7 +88,7 @@ def update_deployment(
         out, _, _ = run_remote_command(
             ssh,
             "cd /opt/omero && docker compose logs omero-iscc --tail=20",
-            check=False
+            check=False,
         )
         print(out)
 
@@ -108,15 +101,23 @@ def update_deployment(
         print(f"   Web Interface: https://{domain}")
         print(f"   API/Insight:   {host}:4064")
         print(f"\n📝 Useful commands:")
-        print("   View omero-iscc logs:  ssh root@omero.iscc.id 'cd /opt/omero && docker compose logs -f omero-iscc'")
-        print("   Check all services:    ssh root@omero.iscc.id 'cd /opt/omero && docker compose ps'")
-        print("   Restart omero-iscc:    ssh root@omero.iscc.id 'cd /opt/omero && docker compose restart omero-iscc'")
+        print(
+            "   View omero-iscc logs:  ssh root@omero.iscc.id 'cd /opt/omero && docker compose logs -f omero-iscc'"
+        )
+        print(
+            "   Check all services:    ssh root@omero.iscc.id 'cd /opt/omero && docker compose ps'"
+        )
+        print(
+            "   Restart omero-iscc:    ssh root@omero.iscc.id 'cd /opt/omero && docker compose restart omero-iscc'"
+        )
         print("=" * 60)
 
     except Exception as e:
         print(f"❌ Update failed: {e}")
         print("\n🔙 You can restore the backup with:")
-        print(f"   ssh {user}@{host} 'mv /opt/omero/compose.yaml.backup /opt/omero/compose.yaml && cd /opt/omero && docker compose up -d'")
+        print(
+            f"   ssh {user}@{host} 'mv /opt/omero/compose.yaml.backup /opt/omero/compose.yaml && cd /opt/omero && docker compose up -d'"
+        )
         sys.exit(1)
     finally:
         ssh.close()

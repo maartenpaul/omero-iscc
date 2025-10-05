@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 import omero
-from omero.rtypes import rlong
 from omero.gateway import BlitzGateway, ImageWrapper, MapAnnotationWrapper
 from iscc_sum import IsccSumProcessor, IsccSumResult
 
@@ -224,7 +223,9 @@ def run():
             params.addLong("minId", last_image_id)
             params.page(0, 100)  # Limit to 100 images per iteration
 
-            images_raw = query_service.findAllByQuery(hql_query, params, conn.SERVICE_OPTS)
+            images_raw = query_service.findAllByQuery(
+                hql_query, params, conn.SERVICE_OPTS
+            )
 
             if not images_raw:
                 logger.debug("No new images found")
