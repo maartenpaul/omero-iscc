@@ -11,7 +11,11 @@ services:
       OMERO_ISCC_PASSWORD: omero
       OMERO_ISCC_POLL_SECONDS: 5
       OMERO_ISCC_PERSIST_DIR: /data
-    restart: unless-stopped
+      ISCC_CRYPTO_SECRET_KEY: z3u2cS9AAafjamHNEbpcaKSoNrqK7jHczS4K2o1XKKXu6Zwh
+      ISCC_CRYPTO_CONTROLLER: did:web:universiteitleiden.nl
+      ISCC_HUB_ID: 0
+      ISCC_HUB_URL: https://sb0.iscc.id
+      restart: unless-stopped
     networks:
       - omero-net
     volumes:
