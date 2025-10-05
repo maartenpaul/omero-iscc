@@ -11,7 +11,10 @@ services:
       - omero-db-data:/var/lib/postgresql/data
 
   omero-server:
-    image: openmicroscopy/omero-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    #image: openmicroscopy/omero-server:latest
     depends_on:
       - omero-db
     environment:
@@ -28,6 +31,7 @@ services:
       - omero-net
     volumes:
       - ./omero-data:/OMERO
+      - ./Figure_To_pdf.py:/opt/omero/server/OMERO.server/lib/scripts/omero/figure_scripts/Figure_To_Pdf.py
     ports:
       - "4064:4064"   # <-- Expose OMERO Insight / API port
 

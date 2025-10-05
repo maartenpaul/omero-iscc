@@ -1,0 +1,34 @@
+# Dockerfile.dev
+FROM openmicroscopy/omero-server:latest
+
+# Switch to root for development
+USER root
+
+ENV OMERO_DIST /opt/omero/server/OMERO.server
+
+# Install development tools
+#RUN yum install -y git 
+
+# Install the Figure-to-PDF script for OMERO.figure plugin
+RUN curl -o $OMERO_DIST/lib/scripts/omero/figure_scripts/Figure_To_Pdf.py \
+    https://raw.githubusercontent.com/ome/omero-figure/refs/heads/master/omero_figure/scripts/omero/figure_scripts/Figure_To_Pdf.py
+
+# Install ISCC dependencies
+RUN /opt/omero/server/venv3/bin/python3 -m pip install --upgrade pip
+RUN /opt/omero/server/venv3/bin/python3 -m pip install iscc-core
+
+# Install Pixi package manager for isolated Python environments
+RUN curl -fsSL https://pixi.sh/install.sh | bash
+ENV PATH="/root/.pixi/bin:${PATH}"
+
+# Create a Pixi project for ISCC tools with Python 3.12
+RUN mkdir -p /opt/iscc && cd /opt/iscc \
+    && pixi init --channel conda-forge \
+    && pixi add python=3.12 \
+    && pixi add --pypi iscc-sum iscc-core \
+    && ln -s /opt/iscc/.pixi/envs/default/bin/iscc-sum /usr/local/bin/iscc-sum
+
+USER omero-server 
+# Keep container running and accessible
+#CMD ["/bin/bash"]
+#ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
