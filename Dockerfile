@@ -1,30 +1,40 @@
-FROM python:3.12-slim
+# Stage 1: Builder stage
+FROM python:3.12-slim AS builder
 
-WORKDIR /app
+# Copy uv binary from official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Install zeroc-ice for Linux first
-RUN pip install --no-cache-dir \
-    https://github.com/glencoesoftware/zeroc-ice-py-linux-x86_64/releases/download/20240202/zeroc_ice-3.6.5-cp312-cp312-manylinux_2_28_x86_64.whl
+WORKDIR /app
 
-# Install other dependencies
-RUN pip install --no-cache-dir \
-    iscc-sum>=0.1.0 \
-    iscc-crypto>=0.3.0 \
-    omero-py>=5.21.1 \
-    requests>=2.31.0 \
-    numpy>=1.24.0
+# Install dependencies in a separate layer for caching
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    uv sync --locked --no-install-project --no-dev
 
+# Copy project and install
+COPY . /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-editable --no-dev
+
+# Stage 2: Final lightweight image
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Copy application code
 COPY omero_iscc/ ./omero_iscc/
 
-ENV OMERO_ISCC_HOST=omero-server
-ENV OMERO_ISCC_USER=root
-ENV OMERO_ISCC_PASSWORD=omero
-ENV OMERO_ISCC_POLL_SECONDS=5
-ENV OMERO_ISCC_PERSIST_DIR=/data
+# Set up environment
+ENV PATH="/app/.venv/bin:$PATH"
 
 CMD ["python", "-m", "omero_iscc"]
