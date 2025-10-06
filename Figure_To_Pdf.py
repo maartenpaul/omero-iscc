@@ -1204,7 +1204,7 @@ class FigureExport(object):
             logger.error(f"Error retrieving ISCC annotation for image {image_id}: {str(e)}")
             return None
 
-    def generate_panel_iscc(self, pil_img, panel, panel_index):
+    def generate_panel_iscc(self, pil_img, panel, panel_index, saved_tiff_path=None):
         """
         Generate ISCC-SUM for a single panel image using CLI.
         
@@ -1212,15 +1212,24 @@ class FigureExport(object):
             pil_img: PIL Image object of the panel
             panel: Panel dictionary with metadata
             panel_index: Index of the panel in the figure
+            saved_tiff_path: Path to the saved TIFF file (if available)
         
         Returns:
             Dictionary with ISCC codes and metadata
         """
         try:
-            # Save PIL image to temporary file
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
-                tmp_filename = tmp_file.name
-                pil_img.save(tmp_filename, format='PNG')
+            # Use the actual saved TIFF if available, otherwise save as temp PNG
+            if saved_tiff_path and os.path.exists(saved_tiff_path):
+                tmp_filename = saved_tiff_path
+                delete_temp = False
+                logger.info(f"Calculating ISCC on exported TIFF: {tmp_filename}")
+            else:
+                # Fallback: Save PIL image to temporary file
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+                    tmp_filename = tmp_file.name
+                    pil_img.save(tmp_filename, format='PNG')
+                delete_temp = True
+                logger.warning(f"No TIFF path provided, using temporary PNG for ISCC calculation")
             
             try:
                 # Call iscc-sum CLI with --units flag to get component codes
@@ -1438,8 +1447,8 @@ class FigureExport(object):
                 return panel_iscc
                 
             finally:
-                # Clean up temporary file
-                if os.path.exists(tmp_filename):
+                # Clean up temporary file (only if we created it)
+                if delete_temp and os.path.exists(tmp_filename):
                     os.unlink(tmp_filename)
             
         except subprocess.CalledProcessError as e:
@@ -1539,19 +1548,19 @@ class FigureExport(object):
                         
                         f.write("Components:\n")
                         
-                        # Determine component order based on presence of Image-Code
-                        has_image_code = 'image_code' in panel_iscc
-                        num_units = len(panel_iscc['units'])
-                        
-                        for i, unit in enumerate(panel_iscc['units']):
-                            if i == 0:
+                        # Component labels based on unit prefix
+                        # ISCC unit prefixes: AAD=Meta, GAD=Image, EED=Data, IAD=Instance
+                        for unit in panel_iscc['units']:
+                            if unit.startswith('ISCC:AAD'):
                                 f.write(f"  Meta-Code:     {unit}\n")
-                            elif has_image_code and i == 1:
+                            elif unit.startswith('ISCC:GAD'):
                                 f.write(f"  Image-Code:    {unit}\n")
-                            elif (has_image_code and i == 2) or (not has_image_code and i == 1):
+                            elif unit.startswith('ISCC:EED'):
                                 f.write(f"  Data-Code:     {unit}\n")
-                            else:
+                            elif unit.startswith('ISCC:IAD'):
                                 f.write(f"  Instance-Code: {unit}\n")
+                            else:
+                                f.write(f"  Unknown:       {unit}\n")
                         
                         if 'datahash' in panel_iscc and panel_iscc['datahash']:
                             f.write(f"  DataHash:      {panel_iscc['datahash']}\n")
@@ -1602,8 +1611,6 @@ class FigureExport(object):
                 f.write("  - Perceptual hash of panel appearance\n")
                 f.write("  - Finds visually similar images\n")
                 f.write("  - Robust to minor changes\n\n")
-                f.write("For signing/timestamping: https://sb0.iscc.id\n")
-                f.write("For similarity checking: iscc-sum --similar <files>\n")
                 f.write("=" * 80 + "\n")
             
             logger.info(f"ISCC codes saved to {iscc_filename}")
@@ -2662,16 +2669,17 @@ class FigureExport(object):
             if image._re is not None:
                 image._re.close()
 
-        # Generate ISCC for this panel
-        if pil_img is not None:
-            panel_iscc = self.generate_panel_iscc(pil_img, panel, idx)
-            self.iscc_data['panels'].append(panel_iscc)
-        
         # for PDF export, we might have a target dpi
         dpi = panel.get('min_export_dpi', None)
 
         # Paste the panel to PDF or TIFF image
-        self.paste_image(pil_img, img_name, panel, page, dpi)
+        saved_path = self.paste_image(pil_img, img_name, panel, page, dpi)
+        
+        # Generate ISCC for this panel AFTER it's been saved as TIFF
+        # This ensures Instance-Code matches the exported file
+        if pil_img is not None:
+            panel_iscc = self.generate_panel_iscc(pil_img, panel, idx, saved_path)
+            self.iscc_data['panels'].append(panel_iscc)
 
         return image, pil_img
 
@@ -3020,11 +3028,15 @@ class FigureExport(object):
         else:
             # Save Image to file, then bring into PDF
             pil_img.save(img_name)
+            saved_file_path = img_name  # Return the path for ISCC calculation
         # Since coordinate system is 'bottom-up', convert from 'top-down'
         y = self.page_height - height - y
         # set fill color alpha to fully opaque, since this impacts drawImage
         self.figure_canvas.setFillColorRGB(0, 0, 0, alpha=1)
         self.figure_canvas.drawImage(img_name, x, y, width, height)
+        
+        # Return saved path for ISCC calculation
+        return saved_file_path if not is_colorbar else None
 
 
 class TiffExport(FigureExport):
@@ -3124,9 +3136,11 @@ class TiffExport(FigureExport):
         # Resize to our target size to match DPI of figure
         pil_img = pil_img.resize((width, height), Image.BICUBIC)
 
+        saved_file_path = None
         if export_img:
             img_name = os.path.join(self.zip_folder_name, FINAL_DIR, img_name)
             pil_img.save(img_name)
+            saved_file_path = img_name
 
         # Now at full figure resolution - Good time to add shapes...
         crop = self.get_crop_region(panel)
@@ -3153,6 +3167,9 @@ class TiffExport(FigureExport):
             box = (x, y, x + width, y + height)
 
         self.tiff_figure.paste(pil_img, box)
+        
+        # Return saved path for ISCC calculation
+        return saved_file_path
 
     def draw_scalebar_line(self, x, y, x2, y2, width, rgb):
         """ Draw line on the current figure page """
