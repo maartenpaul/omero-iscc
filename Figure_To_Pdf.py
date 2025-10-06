@@ -1549,13 +1549,13 @@ class FigureExport(object):
                         f.write("Components:\n")
                         
                         # Component labels based on unit prefix
-                        # ISCC unit prefixes: AAD=Meta, GAD=Image, EED=Data, IAD=Instance
+                        # ISCC unit prefixes: AAD=Meta, EED=Image, GAD=Data, IAD=Instance
                         for unit in panel_iscc['units']:
                             if unit.startswith('ISCC:AAD'):
                                 f.write(f"  Meta-Code:     {unit}\n")
-                            elif unit.startswith('ISCC:GAD'):
-                                f.write(f"  Image-Code:    {unit}\n")
                             elif unit.startswith('ISCC:EED'):
+                                f.write(f"  Image-Code:    {unit}\n")
+                            elif unit.startswith('ISCC:GAD'):
                                 f.write(f"  Data-Code:     {unit}\n")
                             elif unit.startswith('ISCC:IAD'):
                                 f.write(f"  Instance-Code: {unit}\n")
